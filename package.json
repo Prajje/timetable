@@ -1,0 +1,16 @@
+{
+  "name": "timetable",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx http-server -p 3000 -c-1 -o",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "http-server": "^14.1.1"
+  }
+}
