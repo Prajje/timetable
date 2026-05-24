@@ -2,74 +2,62 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build an ADHD-tuned gamified daily planner served as a static site on Vercel with a Notion-backed proxy.
+**Goal:** Build an ADHD-tuned gamified daily planner. Pure static site (GitHub Pages), data in localStorage. No accounts, no backend.
 
-**Architecture:** Vanilla HTML/CSS/JS frontend served as static files from `public/`. A single Vercel serverless directory under `api/` proxies a Notion database, holding the Notion token server-side. Pure logic (XP, streak, dates, aggregation) lives in `public/js/lib/` and is imported by both frontend and serverless functions, so it's tested once and reused. State of truth = Notion DB; localStorage is a write-queue for offline check-offs.
+**Architecture:** Vanilla HTML/CSS/JS served as static files. The only storage is `localStorage["timetable.data"]` — one JSON blob holding tasks + settings. Pure logic (XP, streak, dates, aggregation) lives in `js/lib/` and is unit-tested with Vitest. A `storage.js` module wraps localStorage behind a clean interface so a future backend swap (Notion + Vercel) only requires rewriting that one file.
 
 **Tech Stack:**
 - Node.js 20, ESM (`"type": "module"`)
-- Vitest (unit tests, ~95% of testing) + jsdom (DOM tests)
-- `@notionhq/client` (Notion API)
-- `canvas-confetti` (visual effects, lazy-loaded)
-- Vercel (hosting + serverless functions)
+- Vitest (unit tests) with jsdom for DOM tests
+- `canvas-confetti` (visual effects, lazy-loaded from CDN at runtime)
+- GitHub Pages (hosting)
 - Vanilla JS, no framework, no bundler
 
 **File structure** (locked in):
 ```
 timetable/
-├── api/
-│   ├── _helpers/
-│   │   ├── auth.js          # Bearer-token check
-│   │   └── notion.js        # Notion client wrapper + row<->task mapping
-│   ├── day.js               # GET ?date=YYYY-MM-DD
-│   ├── tasks.js             # POST  (batch create)
-│   ├── history.js           # GET ?days=30
-│   └── task/[id].js         # PATCH, DELETE
-├── public/
-│   ├── index.html
-│   ├── css/styles.css
-│   └── js/
-│       ├── app.js           # Entry, orchestration
-│       ├── storage.js       # Proxy client + offline queue
-│       ├── lib/             # Shared pure functions
-│       │   ├── dates.js
-│       │   ├── xp.js
-│       │   ├── level.js
-│       │   ├── streak.js
-│       │   └── aggregate.js
-│       └── ui/
-│           ├── topbar.js
-│           ├── day.js
-│           ├── effects.js   # Confetti, XP popups, sounds
-│           ├── drawer.js    # Night-planning drawer
-│           ├── history.js
-│           ├── settings.js
-│           └── passphrase.js
+├── index.html
+├── css/styles.css
+├── js/
+│   ├── app.js                # Entry, orchestration
+│   ├── storage.js            # localStorage CRUD behind clean interface
+│   ├── lib/                  # Pure functions
+│   │   ├── dates.js
+│   │   ├── xp.js
+│   │   ├── level.js
+│   │   ├── streak.js
+│   │   └── aggregate.js
+│   └── ui/
+│       ├── topbar.js
+│       ├── day.js
+│       ├── effects.js        # Confetti, XP popups, sounds, loot drops
+│       ├── drawer.js         # Generic slide-up drawer
+│       ├── plan-drawer.js    # Night-planning drawer
+│       ├── history.js        # History calendar drawer
+│       └── settings.js       # Settings drawer
 ├── tests/
-│   ├── lib/{dates,xp,level,streak,aggregate}.test.js
-│   └── api/{auth,day,tasks,task-id,history}.test.js
+│   └── lib/{dates,xp,level,streak,aggregate}.test.js
+├── tests/storage.test.js
 ├── docs/superpowers/
 │   ├── specs/2026-05-24-timetable-design.md
 │   └── plans/2026-05-24-timetable-plan.md
 ├── package.json
-├── vercel.json
-├── .env.example
+├── vitest.config.js
 ├── .gitignore
 └── README.md
 ```
 
-**Convention for commit messages:** Conventional commits. `test:`, `feat:`, `fix:`, `chore:`, `docs:`.
+**Convention:** Conventional commits. `test:`, `feat:`, `fix:`, `chore:`, `docs:`.
 
 ---
 
 ## Phase 1 — Foundation
 
-### Task 1: Initialize package.json, dependencies, scripts
+### Task 1: package.json + dependencies
 
 **Files:**
 - Create: `package.json`
 - Create: `.gitignore`
-- Create: `.env.example`
 
 - [ ] **Step 1: Create `package.json`**
 
@@ -80,18 +68,14 @@ timetable/
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "npx http-server -p 3000 -c-1 -o",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "deploy": "vercel --prod"
-  },
-  "dependencies": {
-    "@notionhq/client": "^2.2.15"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "vitest": "^2.1.0",
     "jsdom": "^25.0.0",
-    "vercel": "^39.0.0"
+    "http-server": "^14.1.1"
   }
 }
 ```
@@ -100,57 +84,31 @@ timetable/
 
 ```
 node_modules/
-.env
-.env.local
-.vercel/
 coverage/
 .DS_Store
+*.log
 ```
 
-- [ ] **Step 3: Create `.env.example`**
-
-```
-NOTION_TOKEN=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-APP_PASSPHRASE=change-me-to-a-real-secret
-```
-
-- [ ] **Step 4: Install dependencies**
+- [ ] **Step 3: Install**
 
 Run: `npm install`
-Expected: `node_modules/` created, no errors.
+Expected: `node_modules/` populated, no errors.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add package.json package-lock.json .gitignore .env.example
-git commit -m "chore: initialize package.json with vitest + vercel + notion"
+git add package.json package-lock.json .gitignore
+git commit -m "chore: initialize package.json with vitest + http-server"
 ```
 
 ---
 
-### Task 2: Configure Vercel & Vitest
+### Task 2: Configure Vitest
 
 **Files:**
-- Create: `vercel.json`
 - Create: `vitest.config.js`
 
-- [ ] **Step 1: Create `vercel.json`**
-
-```json
-{
-  "version": 2,
-  "public": false,
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "rewrites": [
-    { "source": "/", "destination": "/public/index.html" },
-    { "source": "/((?!api).*)", "destination": "/public/$1" }
-  ]
-}
-```
-
-- [ ] **Step 2: Create `vitest.config.js`**
+- [ ] **Step 1: Create `vitest.config.js`**
 
 ```javascript
 import { defineConfig } from 'vitest/config';
@@ -160,34 +118,35 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.js'],
     environmentMatchGlobs: [
+      ['tests/storage.test.js', 'jsdom'],
       ['tests/ui/**', 'jsdom']
     ]
   }
 });
 ```
 
-- [ ] **Step 3: Sanity-check vitest runs**
+- [ ] **Step 2: Sanity-check**
 
 Run: `npm test`
-Expected: "No test files found" (no error). This proves config parses.
+Expected: "No test files found" with no other error. Config parses.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add vercel.json vitest.config.js
-git commit -m "chore: configure vercel and vitest"
+git add vitest.config.js
+git commit -m "chore: configure vitest"
 ```
 
 ---
 
-## Phase 2 — Pure logic (lib/)
+## Phase 2 — Pure logic (js/lib/)
 
-All files in `public/js/lib/` are pure ESM modules with no DOM or network dependencies. Tested with Vitest.
+All modules in `js/lib/` are pure ESM with no DOM or storage dependencies.
 
 ### Task 3: Date utilities
 
 **Files:**
-- Create: `public/js/lib/dates.js`
+- Create: `js/lib/dates.js`
 - Test: `tests/lib/dates.test.js`
 
 - [ ] **Step 1: Write failing tests**
@@ -196,21 +155,19 @@ All files in `public/js/lib/` are pure ESM modules with no DOM or network depend
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { toISODate, addDays, isoWeekStart, isSameISOWeek, todayISO } from '../../public/js/lib/dates.js';
+import { toISODate, addDays, isoWeekStart, isSameISOWeek, todayISO } from '../../js/lib/dates.js';
 
 describe('toISODate', () => {
-  it('formats a Date as YYYY-MM-DD using local time', () => {
-    const d = new Date(2026, 4, 24); // May 24, 2026
-    expect(toISODate(d)).toBe('2026-05-24');
+  it('formats a Date as YYYY-MM-DD in local time', () => {
+    expect(toISODate(new Date(2026, 4, 24))).toBe('2026-05-24');
   });
-
-  it('zero-pads single-digit months and days', () => {
+  it('zero-pads', () => {
     expect(toISODate(new Date(2026, 0, 5))).toBe('2026-01-05');
   });
 });
 
 describe('addDays', () => {
-  it('adds days to an ISO date string', () => {
+  it('adds days', () => {
     expect(addDays('2026-05-24', 1)).toBe('2026-05-25');
     expect(addDays('2026-05-24', -1)).toBe('2026-05-23');
     expect(addDays('2026-05-31', 1)).toBe('2026-06-01');
@@ -218,25 +175,21 @@ describe('addDays', () => {
 });
 
 describe('isoWeekStart', () => {
-  it('returns the Monday of the ISO week containing the given date', () => {
-    // 2026-05-24 is a Sunday → week start is 2026-05-18 (Monday)
-    expect(isoWeekStart('2026-05-24')).toBe('2026-05-18');
-    // 2026-05-18 is itself a Monday
-    expect(isoWeekStart('2026-05-18')).toBe('2026-05-18');
+  it('returns Monday of the ISO week', () => {
+    expect(isoWeekStart('2026-05-24')).toBe('2026-05-18'); // Sun -> Mon prior
+    expect(isoWeekStart('2026-05-18')).toBe('2026-05-18'); // Mon -> same
   });
 });
 
 describe('isSameISOWeek', () => {
-  it('returns true for two dates in the same ISO week', () => {
+  it('compares ISO weeks', () => {
     expect(isSameISOWeek('2026-05-18', '2026-05-24')).toBe(true);
-  });
-  it('returns false for dates in different ISO weeks', () => {
     expect(isSameISOWeek('2026-05-17', '2026-05-18')).toBe(false);
   });
 });
 
 describe('todayISO', () => {
-  it('returns a YYYY-MM-DD string', () => {
+  it('returns YYYY-MM-DD format', () => {
     expect(todayISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
@@ -247,7 +200,7 @@ describe('todayISO', () => {
 Run: `npm test`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `public/js/lib/dates.js`**
+- [ ] **Step 3: Implement `js/lib/dates.js`**
 
 ```javascript
 export function toISODate(d) {
@@ -270,7 +223,7 @@ export function addDays(iso, n) {
 
 export function isoWeekStart(iso) {
   const d = fromISODate(iso);
-  const day = d.getDay(); // 0 = Sun, 1 = Mon, ...
+  const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return toISODate(d);
@@ -288,13 +241,13 @@ export function todayISO() {
 - [ ] **Step 4: Run, verify pass**
 
 Run: `npm test`
-Expected: PASS, 6 tests.
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/lib/dates.js tests/lib/dates.test.js
-git commit -m "feat(lib): date utilities (toISODate, addDays, isoWeekStart)"
+git add js/lib/dates.js tests/lib/dates.test.js
+git commit -m "feat(lib): date utilities"
 ```
 
 ---
@@ -302,7 +255,7 @@ git commit -m "feat(lib): date utilities (toISODate, addDays, isoWeekStart)"
 ### Task 4: XP calculation
 
 **Files:**
-- Create: `public/js/lib/xp.js`
+- Create: `js/lib/xp.js`
 - Test: `tests/lib/xp.test.js`
 
 - [ ] **Step 1: Write failing tests**
@@ -311,57 +264,40 @@ git commit -m "feat(lib): date utilities (toISODate, addDays, isoWeekStart)"
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { xpForTask, totalXpForTasks, XP_VALUES } from '../../public/js/lib/xp.js';
+import { xpForTask, totalXpForTasks, XP_VALUES } from '../../js/lib/xp.js';
 
 describe('xpForTask', () => {
-  it('returns 10 for yolo', () => {
-    expect(xpForTask({ type: 'yolo', done: true })).toBe(10);
-  });
-  it('returns 20 for power_up', () => {
-    expect(xpForTask({ type: 'power_up', done: true })).toBe(20);
-  });
-  it('returns 20 for regular', () => {
-    expect(xpForTask({ type: 'regular', done: true })).toBe(20);
-  });
-  it('returns 50 for boss', () => {
-    expect(xpForTask({ type: 'boss', done: true })).toBe(50);
-  });
-  it('returns 0 for incomplete task', () => {
-    expect(xpForTask({ type: 'boss', done: false })).toBe(0);
-  });
-  it('returns 0 for unknown type', () => {
-    expect(xpForTask({ type: 'mystery', done: true })).toBe(0);
-  });
+  it('returns 10 for yolo', () => { expect(xpForTask({ type: 'yolo', done: true })).toBe(10); });
+  it('returns 20 for power_up', () => { expect(xpForTask({ type: 'power_up', done: true })).toBe(20); });
+  it('returns 20 for regular', () => { expect(xpForTask({ type: 'regular', done: true })).toBe(20); });
+  it('returns 50 for boss', () => { expect(xpForTask({ type: 'boss', done: true })).toBe(50); });
+  it('returns 0 if not done', () => { expect(xpForTask({ type: 'boss', done: false })).toBe(0); });
+  it('returns 0 for unknown type', () => { expect(xpForTask({ type: 'mystery', done: true })).toBe(0); });
 });
 
 describe('totalXpForTasks', () => {
-  it('sums xp across an array', () => {
-    const tasks = [
+  it('sums xp', () => {
+    expect(totalXpForTasks([
       { type: 'power_up', done: true },
       { type: 'yolo', done: true },
       { type: 'boss', done: false },
       { type: 'regular', done: true }
-    ];
-    expect(totalXpForTasks(tasks)).toBe(20 + 10 + 0 + 20);
+    ])).toBe(50);
   });
-  it('returns 0 for empty array', () => {
-    expect(totalXpForTasks([])).toBe(0);
-  });
+  it('returns 0 for empty', () => { expect(totalXpForTasks([])).toBe(0); });
 });
 
 describe('XP_VALUES', () => {
-  it('exposes the value table', () => {
-    expect(XP_VALUES.boss).toBe(50);
-  });
+  it('exposes table', () => { expect(XP_VALUES.boss).toBe(50); });
 });
 ```
 
 - [ ] **Step 2: Run, verify fail**
 
 Run: `npm test`
-Expected: FAIL — module not found.
+Expected: FAIL.
 
-- [ ] **Step 3: Implement `public/js/lib/xp.js`**
+- [ ] **Step 3: Implement `js/lib/xp.js`**
 
 ```javascript
 export const XP_VALUES = Object.freeze({
@@ -377,28 +313,28 @@ export function xpForTask(task) {
 }
 
 export function totalXpForTasks(tasks) {
-  return tasks.reduce((sum, t) => sum + xpForTask(t), 0);
+  return tasks.reduce((s, t) => s + xpForTask(t), 0);
 }
 ```
 
 - [ ] **Step 4: Run, verify pass**
 
 Run: `npm test`
-Expected: PASS, 9 tests.
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/lib/xp.js tests/lib/xp.test.js
-git commit -m "feat(lib): xp values + per-task and per-day calculation"
+git add js/lib/xp.js tests/lib/xp.test.js
+git commit -m "feat(lib): xp values and totals"
 ```
 
 ---
 
-### Task 5: Level calculation
+### Task 5: Level math
 
 **Files:**
-- Create: `public/js/lib/level.js`
+- Create: `js/lib/level.js`
 - Test: `tests/lib/level.test.js`
 
 - [ ] **Step 1: Write failing tests**
@@ -407,13 +343,11 @@ git commit -m "feat(lib): xp values + per-task and per-day calculation"
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { levelForTotalXp, xpToNextLevel } from '../../public/js/lib/level.js';
+import { levelForTotalXp, xpToNextLevel } from '../../js/lib/level.js';
 
 describe('levelForTotalXp', () => {
-  it('is 0 at 0 xp', () => {
-    expect(levelForTotalXp(0)).toBe(0);
-  });
-  it('is floor(sqrt(xp/50))', () => {
+  it('starts at 0', () => { expect(levelForTotalXp(0)).toBe(0); });
+  it('uses floor(sqrt(xp/50))', () => {
     expect(levelForTotalXp(50)).toBe(1);
     expect(levelForTotalXp(200)).toBe(2);
     expect(levelForTotalXp(450)).toBe(3);
@@ -426,13 +360,10 @@ describe('levelForTotalXp', () => {
 });
 
 describe('xpToNextLevel', () => {
-  it('returns 50 from 0', () => {
-    // level 0 → next at 50
+  it('returns gap to next threshold', () => {
     expect(xpToNextLevel(0)).toBe(50);
-  });
-  it('returns the gap to (level+1)^2 * 50', () => {
-    expect(xpToNextLevel(50)).toBe(150);   // next at 200
-    expect(xpToNextLevel(200)).toBe(250);  // next at 450
+    expect(xpToNextLevel(50)).toBe(150);
+    expect(xpToNextLevel(200)).toBe(250);
   });
 });
 ```
@@ -440,9 +371,9 @@ describe('xpToNextLevel', () => {
 - [ ] **Step 2: Run, verify fail**
 
 Run: `npm test`
-Expected: FAIL — module not found.
+Expected: FAIL.
 
-- [ ] **Step 3: Implement `public/js/lib/level.js`**
+- [ ] **Step 3: Implement `js/lib/level.js`**
 
 ```javascript
 export function levelForTotalXp(totalXp) {
@@ -451,8 +382,7 @@ export function levelForTotalXp(totalXp) {
 
 export function xpToNextLevel(totalXp) {
   const lvl = levelForTotalXp(totalXp);
-  const nextThreshold = (lvl + 1) ** 2 * 50;
-  return nextThreshold - totalXp;
+  return (lvl + 1) ** 2 * 50 - totalXp;
 }
 ```
 
@@ -464,8 +394,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/lib/level.js tests/lib/level.test.js
-git commit -m "feat(lib): level and xp-to-next-level math"
+git add js/lib/level.js tests/lib/level.test.js
+git commit -m "feat(lib): level + xp-to-next math"
 ```
 
 ---
@@ -473,14 +403,8 @@ git commit -m "feat(lib): level and xp-to-next-level math"
 ### Task 6: Streak with rest-day forgiveness
 
 **Files:**
-- Create: `public/js/lib/streak.js`
+- Create: `js/lib/streak.js`
 - Test: `tests/lib/streak.test.js`
-
-The streak rule: consecutive days with ≥1 boss completed. One "rest day" per ISO week is permitted (does not break the streak). If a day passes with zero bosses and no rest day available that week, streak resets.
-
-Input: an array of day summaries, in chronological order, each `{ date: 'YYYY-MM-DD', bossesCompleted: number }`.
-
-Output: `{ streak: number, restDayUsedThisWeek: boolean }` as of today.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -488,64 +412,58 @@ Output: `{ streak: number, restDayUsedThisWeek: boolean }` as of today.
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { computeStreak } from '../../public/js/lib/streak.js';
+import { computeStreak } from '../../js/lib/streak.js';
 
 describe('computeStreak', () => {
-  it('returns 0 for empty history', () => {
+  it('returns 0 for empty', () => {
     expect(computeStreak([], '2026-05-24')).toEqual({ streak: 0, restDayUsedThisWeek: false });
   });
 
-  it('counts consecutive boss-killing days backwards from today', () => {
-    const history = [
+  it('counts consecutive boss days backwards', () => {
+    const h = [
       { date: '2026-05-22', bossesCompleted: 1 },
       { date: '2026-05-23', bossesCompleted: 2 },
       { date: '2026-05-24', bossesCompleted: 1 }
     ];
-    expect(computeStreak(history, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: false });
+    expect(computeStreak(h, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: false });
   });
 
-  it('breaks streak on a zero-boss day with no rest day used', () => {
-    const history = [
+  it('uses rest day to bridge a zero-boss day', () => {
+    const h = [
       { date: '2026-05-22', bossesCompleted: 1 },
       { date: '2026-05-23', bossesCompleted: 0 },
       { date: '2026-05-24', bossesCompleted: 1 }
     ];
-    // Today (5-24) has 1 boss → streak = 1; 5-23 was zero and rest day available, but rest day is "consumed" by 5-23
-    // so streak continues through 5-23: today=1, yesterday=rest-day-saved, 5-22=2, no earlier → streak=3
-    expect(computeStreak(history, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: true });
+    expect(computeStreak(h, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: true });
   });
 
-  it('breaks when a second zero day happens in the same week', () => {
-    // ISO week of 2026-05-24 starts Mon 2026-05-18
-    const history = [
+  it('breaks on second zero day in the same week', () => {
+    const h = [
       { date: '2026-05-19', bossesCompleted: 1 },
-      { date: '2026-05-20', bossesCompleted: 0 }, // rest day used
+      { date: '2026-05-20', bossesCompleted: 0 },
       { date: '2026-05-21', bossesCompleted: 1 },
-      { date: '2026-05-22', bossesCompleted: 0 }, // no rest left → streak breaks here
+      { date: '2026-05-22', bossesCompleted: 0 },
       { date: '2026-05-23', bossesCompleted: 1 },
       { date: '2026-05-24', bossesCompleted: 1 }
     ];
-    // walking backward: today=1, 5-23=1, 5-22=zero, no rest available (used earlier in week) → streak stops
-    expect(computeStreak(history, '2026-05-24')).toEqual({ streak: 2, restDayUsedThisWeek: true });
+    expect(computeStreak(h, '2026-05-24')).toEqual({ streak: 2, restDayUsedThisWeek: true });
   });
 
-  it('treats missing days (gaps) as zero-boss days', () => {
-    const history = [
+  it('treats missing days as zero-boss', () => {
+    const h = [
       { date: '2026-05-22', bossesCompleted: 1 },
       { date: '2026-05-24', bossesCompleted: 1 }
-      // 5-23 is missing → counts as zero
     ];
-    // today=1, 5-23=zero (rest day saves it), 5-22=1 → streak=3
-    expect(computeStreak(history, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: true });
+    expect(computeStreak(h, '2026-05-24')).toEqual({ streak: 3, restDayUsedThisWeek: true });
   });
 
-  it('starts streak at 0 if today has no bosses and rest day already used', () => {
-    const history = [
-      { date: '2026-05-19', bossesCompleted: 0 }, // uses rest day
+  it('returns 0 if today is zero and rest day spent', () => {
+    const h = [
+      { date: '2026-05-19', bossesCompleted: 0 },
       { date: '2026-05-20', bossesCompleted: 1 },
-      { date: '2026-05-24', bossesCompleted: 0 }  // today, no rest left
+      { date: '2026-05-24', bossesCompleted: 0 }
     ];
-    expect(computeStreak(history, '2026-05-24')).toEqual({ streak: 0, restDayUsedThisWeek: true });
+    expect(computeStreak(h, '2026-05-24')).toEqual({ streak: 0, restDayUsedThisWeek: true });
   });
 });
 ```
@@ -555,7 +473,7 @@ describe('computeStreak', () => {
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `public/js/lib/streak.js`**
+- [ ] **Step 3: Implement `js/lib/streak.js`**
 
 ```javascript
 import { addDays, isoWeekStart } from './dates.js';
@@ -577,7 +495,7 @@ export function computeStreak(history, today) {
   let restAvailable = !restDayUsedThisWeek;
   let currentWeek = isoWeekStart(today);
 
-  while (true) {
+  while (streak <= 365) {
     const cursorWeek = isoWeekStart(cursor);
     if (cursorWeek !== currentWeek) {
       restAvailable = true;
@@ -593,8 +511,6 @@ export function computeStreak(history, today) {
       break;
     }
     cursor = addDays(cursor, -1);
-    // Safety: stop after 365 days backwards
-    if (streak > 365) break;
   }
 
   return { streak, restDayUsedThisWeek };
@@ -604,27 +520,22 @@ export function computeStreak(history, today) {
 - [ ] **Step 4: Run, verify pass**
 
 Run: `npm test`
-Expected: PASS, all 6 streak tests.
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/lib/streak.js tests/lib/streak.test.js
+git add js/lib/streak.js tests/lib/streak.test.js
 git commit -m "feat(lib): boss-kill streak with weekly rest-day forgiveness"
 ```
 
 ---
 
-### Task 7: Day aggregation (XP, bosses defeated, completion status)
+### Task 7: Day aggregation
 
 **Files:**
-- Create: `public/js/lib/aggregate.js`
+- Create: `js/lib/aggregate.js`
 - Test: `tests/lib/aggregate.test.js`
-
-`summarizeDay(tasks)` returns `{ totalXp, bossesCompleted, bossesPlanned, completionStatus }`.
-`completionStatus` ∈ `'all-bosses' | 'partial' | 'missed' | 'rest'` based on counts. (`'rest'` is set externally; `summarizeDay` only returns the first three.)
-
-`groupByBlock(tasks)` returns ordered array of `{ blockIndex, blockTitle, energy, tasks }`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -632,60 +543,49 @@ git commit -m "feat(lib): boss-kill streak with weekly rest-day forgiveness"
 
 ```javascript
 import { describe, it, expect } from 'vitest';
-import { summarizeDay, groupByBlock } from '../../public/js/lib/aggregate.js';
+import { summarizeDay, groupByBlock } from '../../js/lib/aggregate.js';
 
 describe('summarizeDay', () => {
-  it('returns zeros for empty tasks', () => {
-    expect(summarizeDay([])).toEqual({
-      totalXp: 0, bossesCompleted: 0, bossesPlanned: 0, completionStatus: 'missed'
-    });
+  it('zero for empty', () => {
+    expect(summarizeDay([])).toEqual({ totalXp: 0, bossesCompleted: 0, bossesPlanned: 0, completionStatus: 'missed' });
   });
 
-  it('counts bosses and XP', () => {
-    const tasks = [
+  it('counts bosses and xp', () => {
+    const r = summarizeDay([
       { type: 'power_up', done: true },
       { type: 'yolo', done: true },
       { type: 'boss', done: true },
       { type: 'boss', done: false }
-    ];
-    const r = summarizeDay(tasks);
-    expect(r.totalXp).toBe(20 + 10 + 50 + 0);
+    ]);
+    expect(r.totalXp).toBe(80);
     expect(r.bossesCompleted).toBe(1);
     expect(r.bossesPlanned).toBe(2);
     expect(r.completionStatus).toBe('partial');
   });
 
-  it('reports all-bosses when every boss done', () => {
-    const tasks = [
-      { type: 'boss', done: true },
-      { type: 'boss', done: true }
-    ];
-    expect(summarizeDay(tasks).completionStatus).toBe('all-bosses');
+  it('reports all-bosses', () => {
+    expect(summarizeDay([{ type: 'boss', done: true }, { type: 'boss', done: true }]).completionStatus).toBe('all-bosses');
   });
 
-  it('reports missed when bosses planned but none done', () => {
-    const tasks = [{ type: 'boss', done: false }];
-    expect(summarizeDay(tasks).completionStatus).toBe('missed');
+  it('reports missed when bosses planned, none done', () => {
+    expect(summarizeDay([{ type: 'boss', done: false }]).completionStatus).toBe('missed');
   });
 });
 
 describe('groupByBlock', () => {
-  it('groups by block index, ordered ascending', () => {
+  it('groups by block ascending', () => {
     const tasks = [
-      { id: 'a', block: 2, blockTitle: 'Afternoon', energy: '🙂', order: 0, type: 'power_up', done: false },
-      { id: 'b', block: 1, blockTitle: 'Morning',   energy: '😐', order: 0, type: 'power_up', done: false },
-      { id: 'c', block: 1, blockTitle: 'Morning',   energy: '😐', order: 1, type: 'yolo',     done: false }
+      { id: 'a', block: 2, blockTitle: 'Afternoon', energy: '🙂', order: 0 },
+      { id: 'b', block: 1, blockTitle: 'Morning', energy: '😐', order: 0 },
+      { id: 'c', block: 1, blockTitle: 'Morning', energy: '😐', order: 1 }
     ];
-    const groups = groupByBlock(tasks);
-    expect(groups.length).toBe(2);
-    expect(groups[0].blockIndex).toBe(1);
-    expect(groups[0].blockTitle).toBe('Morning');
-    expect(groups[0].energy).toBe('😐');
-    expect(groups[0].tasks.map(t => t.id)).toEqual(['b', 'c']);
-    expect(groups[1].blockIndex).toBe(2);
+    const g = groupByBlock(tasks);
+    expect(g.length).toBe(2);
+    expect(g[0].blockIndex).toBe(1);
+    expect(g[0].tasks.map(t => t.id)).toEqual(['b', 'c']);
   });
 
-  it('sorts tasks within block by order', () => {
+  it('sorts tasks by order', () => {
     const tasks = [
       { id: 'a', block: 1, blockTitle: 'M', energy: '', order: 2 },
       { id: 'b', block: 1, blockTitle: 'M', energy: '', order: 0 },
@@ -701,7 +601,7 @@ describe('groupByBlock', () => {
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `public/js/lib/aggregate.js`**
+- [ ] **Step 3: Implement `js/lib/aggregate.js`**
 
 ```javascript
 import { totalXpForTasks } from './xp.js';
@@ -713,28 +613,16 @@ export function summarizeDay(tasks) {
   let completionStatus = 'missed';
   if (bossesPlanned > 0 && bossesCompleted === bossesPlanned) completionStatus = 'all-bosses';
   else if (bossesCompleted > 0) completionStatus = 'partial';
-  return {
-    totalXp: totalXpForTasks(tasks),
-    bossesCompleted,
-    bossesPlanned,
-    completionStatus
-  };
+  return { totalXp: totalXpForTasks(tasks), bossesCompleted, bossesPlanned, completionStatus };
 }
 
 export function groupByBlock(tasks) {
-  const map = new Map();
+  const m = new Map();
   for (const t of tasks) {
-    if (!map.has(t.block)) {
-      map.set(t.block, {
-        blockIndex: t.block,
-        blockTitle: t.blockTitle ?? '',
-        energy: t.energy ?? '',
-        tasks: []
-      });
-    }
-    map.get(t.block).tasks.push(t);
+    if (!m.has(t.block)) m.set(t.block, { blockIndex: t.block, blockTitle: t.blockTitle ?? '', energy: t.energy ?? '', tasks: [] });
+    m.get(t.block).tasks.push(t);
   }
-  const groups = [...map.values()].sort((a, b) => a.blockIndex - b.blockIndex);
+  const groups = [...m.values()].sort((a, b) => a.blockIndex - b.blockIndex);
   for (const g of groups) g.tasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return groups;
 }
@@ -748,56 +636,130 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/lib/aggregate.js tests/lib/aggregate.test.js
-git commit -m "feat(lib): day summary and group-by-block helpers"
+git add js/lib/aggregate.js tests/lib/aggregate.test.js
+git commit -m "feat(lib): day summary + group-by-block"
 ```
 
 ---
 
-## Phase 3 — Vercel serverless proxy
+## Phase 3 — Storage layer
 
-All endpoints check `Authorization: Bearer <passphrase>` against `APP_PASSPHRASE` env var. CORS: same-origin only (no headers needed).
-
-### Task 8: Auth helper
+### Task 8: localStorage-backed storage module
 
 **Files:**
-- Create: `api/_helpers/auth.js`
-- Test: `tests/api/auth.test.js`
+- Create: `js/storage.js`
+- Test: `tests/storage.test.js`
+
+The interface is the same one a future Notion+Vercel backend would expose, so a v2 swap rewrites only this file:
+- `loadDay(date)` → array of tasks for that date
+- `loadHistory(days)` → tasks within the last N days
+- `createTasks(tasks)` → assigns UUIDs, stores, returns the created task array with IDs
+- `updateTask(id, patch)` → applies partial update, returns updated task
+- `deleteTask(id)` → removes
+- `exportAll()` → returns the JSON blob (for backup)
+- `importAll(blob)` → replaces all data (for restore)
+- `clearAll()` → wipes
+- `getSettings()` / `setSetting(key, value)` → settings persistence
+
+All functions are synchronous (localStorage is sync), but each one returns a Promise so the interface matches a future async backend.
 
 - [ ] **Step 1: Write failing tests**
 
-`tests/api/auth.test.js`:
+`tests/storage.test.js`:
 
 ```javascript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { checkAuth } from '../../api/_helpers/auth.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { loadDay, loadHistory, createTasks, updateTask, deleteTask, exportAll, importAll, clearAll, getSettings, setSetting } from '../js/storage.js';
 
-describe('checkAuth', () => {
-  let originalPass;
-  beforeEach(() => {
-    originalPass = process.env.APP_PASSPHRASE;
-    process.env.APP_PASSPHRASE = 'open-sesame';
+beforeEach(() => {
+  localStorage.clear();
+});
+
+describe('createTasks', () => {
+  it('assigns IDs and persists', async () => {
+    const created = await createTasks([
+      { title: 'A', date: '2026-05-24', block: 1, blockTitle: 'M', type: 'power_up', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    expect(created).toHaveLength(1);
+    expect(created[0].id).toBeTruthy();
+    expect(created[0].title).toBe('A');
   });
-  afterEach(() => {
-    process.env.APP_PASSPHRASE = originalPass;
+});
+
+describe('loadDay', () => {
+  it('returns tasks filtered by date', async () => {
+    await createTasks([
+      { title: 'A', date: '2026-05-24', block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' },
+      { title: 'B', date: '2026-05-25', block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    const day = await loadDay('2026-05-24');
+    expect(day).toHaveLength(1);
+    expect(day[0].title).toBe('A');
   });
 
-  it('returns true on matching Bearer token', () => {
-    const req = { headers: { authorization: 'Bearer open-sesame' } };
-    expect(checkAuth(req)).toBe(true);
+  it('returns [] for unknown date', async () => {
+    expect(await loadDay('2099-01-01')).toEqual([]);
   });
-  it('returns false on missing header', () => {
-    expect(checkAuth({ headers: {} })).toBe(false);
+});
+
+describe('updateTask', () => {
+  it('applies partial update', async () => {
+    const [t] = await createTasks([
+      { title: 'A', date: '2026-05-24', block: 1, blockTitle: 'M', type: 'boss', description: '', minMins: 45, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    const updated = await updateTask(t.id, { done: true, completedAt: '2026-05-24' });
+    expect(updated.done).toBe(true);
+    expect(updated.completedAt).toBe('2026-05-24');
+    expect(updated.title).toBe('A');
   });
-  it('returns false on wrong token', () => {
-    expect(checkAuth({ headers: { authorization: 'Bearer nope' } })).toBe(false);
+
+  it('throws on unknown id', async () => {
+    await expect(updateTask('not-real', { done: true })).rejects.toThrow();
   });
-  it('returns false on non-Bearer scheme', () => {
-    expect(checkAuth({ headers: { authorization: 'Basic open-sesame' } })).toBe(false);
+});
+
+describe('deleteTask', () => {
+  it('removes the task', async () => {
+    const [t] = await createTasks([
+      { title: 'A', date: '2026-05-24', block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    await deleteTask(t.id);
+    expect(await loadDay('2026-05-24')).toEqual([]);
   });
-  it('returns false if env var unset', () => {
-    delete process.env.APP_PASSPHRASE;
-    expect(checkAuth({ headers: { authorization: 'Bearer anything' } })).toBe(false);
+});
+
+describe('loadHistory', () => {
+  it('returns tasks from the last N days', async () => {
+    // Use a fixed today: today is whatever Date.now() resolves to. Just create tasks dated today.
+    const today = new Date().toISOString().slice(0, 10);
+    await createTasks([
+      { title: 'Today', date: today, block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' },
+      { title: 'Ancient', date: '2000-01-01', block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    const h = await loadHistory(30);
+    expect(h.map(t => t.title)).toContain('Today');
+    expect(h.map(t => t.title)).not.toContain('Ancient');
+  });
+});
+
+describe('export/import/clear', () => {
+  it('exports and re-imports', async () => {
+    await createTasks([
+      { title: 'A', date: '2026-05-24', block: 1, blockTitle: 'M', type: 'yolo', description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' }
+    ]);
+    const blob = await exportAll();
+    await clearAll();
+    expect(await loadDay('2026-05-24')).toEqual([]);
+    await importAll(blob);
+    expect((await loadDay('2026-05-24'))[0].title).toBe('A');
+  });
+});
+
+describe('settings', () => {
+  it('reads default and writes', async () => {
+    expect((await getSettings()).soundEnabled).toBe(true);
+    await setSetting('soundEnabled', false);
+    expect((await getSettings()).soundEnabled).toBe(false);
   });
 });
 ```
@@ -805,781 +767,122 @@ describe('checkAuth', () => {
 - [ ] **Step 2: Run, verify fail**
 
 Run: `npm test`
-Expected: FAIL.
+Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `api/_helpers/auth.js`**
-
-```javascript
-export function checkAuth(req) {
-  const expected = process.env.APP_PASSPHRASE;
-  if (!expected) return false;
-  const header = req.headers?.authorization ?? '';
-  const [scheme, token] = header.split(' ');
-  if (scheme !== 'Bearer' || !token) return false;
-  return token === expected;
-}
-
-export function unauthorized(res) {
-  res.status(401).json({ error: 'unauthorized' });
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/_helpers/auth.js tests/api/auth.test.js
-git commit -m "feat(api): bearer passphrase auth helper"
-```
-
----
-
-### Task 9: Notion client wrapper + row↔task mapping
-
-**Files:**
-- Create: `api/_helpers/notion.js`
-- Test: `tests/api/notion.test.js`
-
-This module exposes `getClient()`, `rowToTask(page)`, and `taskToProperties(task)`. The client is lazy-initialized from env vars. The mappers are pure and unit-testable without a network call.
-
-- [ ] **Step 1: Write failing tests**
-
-`tests/api/notion.test.js`:
+- [ ] **Step 3: Implement `js/storage.js`**
 
 ```javascript
-import { describe, it, expect } from 'vitest';
-import { rowToTask, taskToProperties } from '../../api/_helpers/notion.js';
+const KEY = 'timetable.data';
 
-const samplePage = {
-  id: 'page-id-123',
-  properties: {
-    Title:        { title: [{ plain_text: 'Power Up' }] },
-    Date:         { date: { start: '2026-05-24' } },
-    Block:        { number: 1 },
-    'Block Title':{ rich_text: [{ plain_text: 'Morning' }] },
-    Type:         { select: { name: 'power_up' } },
-    Description:  { rich_text: [{ plain_text: 'Eat / Call / Text' }] },
-    'Min Mins':   { number: 30 },
-    Order:        { number: 0 },
-    Done:         { checkbox: false },
-    'Completed At': { date: null },
-    Energy:       { rich_text: [{ plain_text: '😐' }] }
-  }
-};
+const DEFAULT_DATA = { tasks: [], settings: { soundEnabled: true } };
 
-describe('rowToTask', () => {
-  it('maps a Notion page to a flat task object', () => {
-    expect(rowToTask(samplePage)).toEqual({
-      id: 'page-id-123',
-      title: 'Power Up',
-      date: '2026-05-24',
-      block: 1,
-      blockTitle: 'Morning',
-      type: 'power_up',
-      description: 'Eat / Call / Text',
-      minMins: 30,
-      order: 0,
-      done: false,
-      completedAt: null,
-      energy: '😐'
-    });
-  });
-
-  it('handles missing optional fields gracefully', () => {
-    const minimal = {
-      id: 'x',
-      properties: {
-        Title:        { title: [] },
-        Date:         { date: null },
-        Block:        { number: null },
-        'Block Title':{ rich_text: [] },
-        Type:         { select: null },
-        Description:  { rich_text: [] },
-        'Min Mins':   { number: null },
-        Order:        { number: null },
-        Done:         { checkbox: false },
-        'Completed At': { date: null },
-        Energy:       { rich_text: [] }
-      }
-    };
-    expect(rowToTask(minimal)).toMatchObject({
-      id: 'x', title: '', date: null, block: null, blockTitle: '',
-      type: null, description: '', minMins: null, order: null,
-      done: false, completedAt: null, energy: ''
-    });
-  });
-});
-
-describe('taskToProperties', () => {
-  it('maps a task object to Notion property payload', () => {
-    const task = {
-      title: 'Boss', date: '2026-05-24', block: 1, blockTitle: 'Morning',
-      type: 'boss', description: '', minMins: 45, order: 3,
-      done: false, completedAt: null, energy: ''
-    };
-    const props = taskToProperties(task);
-    expect(props.Title.title[0].text.content).toBe('Boss');
-    expect(props.Date.date.start).toBe('2026-05-24');
-    expect(props.Block.number).toBe(1);
-    expect(props.Type.select.name).toBe('boss');
-    expect(props['Min Mins'].number).toBe(45);
-    expect(props.Done.checkbox).toBe(false);
-  });
-
-  it('omits Description property when description is empty', () => {
-    const task = { title: 't', date: '2026-05-24', block: 1, blockTitle: 'M',
-                   type: 'yolo', description: '', minMins: null, order: 0,
-                   done: false, completedAt: null, energy: '' };
-    const props = taskToProperties(task);
-    expect(props.Description.rich_text).toEqual([]);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/_helpers/notion.js`**
-
-```javascript
-import { Client } from '@notionhq/client';
-
-let _client = null;
-
-export function getClient() {
-  if (_client) return _client;
-  const token = process.env.NOTION_TOKEN;
-  if (!token) throw new Error('NOTION_TOKEN env var not set');
-  _client = new Client({ auth: token });
-  return _client;
-}
-
-export function getDatabaseId() {
-  const id = process.env.NOTION_DATABASE_ID;
-  if (!id) throw new Error('NOTION_DATABASE_ID env var not set');
-  return id;
-}
-
-const text = (rt) => (rt && rt.length > 0) ? rt.map(r => r.plain_text).join('') : '';
-
-export function rowToTask(page) {
-  const p = page.properties;
-  return {
-    id: page.id,
-    title: text(p.Title?.title),
-    date: p.Date?.date?.start ?? null,
-    block: p.Block?.number ?? null,
-    blockTitle: text(p['Block Title']?.rich_text),
-    type: p.Type?.select?.name ?? null,
-    description: text(p.Description?.rich_text),
-    minMins: p['Min Mins']?.number ?? null,
-    order: p.Order?.number ?? null,
-    done: p.Done?.checkbox ?? false,
-    completedAt: p['Completed At']?.date?.start ?? null,
-    energy: text(p.Energy?.rich_text)
-  };
-}
-
-const rt = (s) => s ? [{ type: 'text', text: { content: s } }] : [];
-
-export function taskToProperties(task) {
-  return {
-    Title: { title: task.title ? [{ type: 'text', text: { content: task.title } }] : [] },
-    Date: task.date ? { date: { start: task.date } } : { date: null },
-    Block: { number: task.block ?? null },
-    'Block Title': { rich_text: rt(task.blockTitle) },
-    Type: task.type ? { select: { name: task.type } } : { select: null },
-    Description: { rich_text: rt(task.description) },
-    'Min Mins': { number: task.minMins ?? null },
-    Order: { number: task.order ?? null },
-    Done: { checkbox: !!task.done },
-    'Completed At': task.completedAt ? { date: { start: task.completedAt } } : { date: null },
-    Energy: { rich_text: rt(task.energy) }
-  };
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/_helpers/notion.js tests/api/notion.test.js
-git commit -m "feat(api): notion client + row<->task mappers"
-```
-
----
-
-### Task 10: GET /api/day handler
-
-**Files:**
-- Create: `api/day.js`
-- Test: `tests/api/day.test.js`
-
-The handler reads `?date=YYYY-MM-DD`, queries Notion for tasks where Date matches, and returns `{ tasks: [...] }`.
-
-We test by mocking the Notion client.
-
-- [ ] **Step 1: Write failing tests**
-
-`tests/api/day.test.js`:
-
-```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockQuery = vi.fn();
-vi.mock('../../api/_helpers/notion.js', async (orig) => {
-  const real = await orig();
-  return {
-    ...real,
-    getClient: () => ({ databases: { query: mockQuery } }),
-    getDatabaseId: () => 'db-id'
-  };
-});
-
-import handler from '../../api/day.js';
-
-function makeRes() {
-  const res = {
-    statusCode: 200,
-    body: null,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; return this; }
-  };
-  return res;
-}
-
-describe('GET /api/day', () => {
-  beforeEach(() => {
-    mockQuery.mockReset();
-    process.env.APP_PASSPHRASE = 'p';
-  });
-
-  it('returns 401 without auth', async () => {
-    const req = { method: 'GET', query: { date: '2026-05-24' }, headers: {} };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 400 without date param', async () => {
-    const req = { method: 'GET', query: {}, headers: { authorization: 'Bearer p' } };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('returns mapped tasks for a date', async () => {
-    mockQuery.mockResolvedValue({ results: [
-      {
-        id: 'pg1',
-        properties: {
-          Title: { title: [{ plain_text: 'Boss' }] },
-          Date: { date: { start: '2026-05-24' } },
-          Block: { number: 1 },
-          'Block Title': { rich_text: [{ plain_text: 'Morning' }] },
-          Type: { select: { name: 'boss' } },
-          Description: { rich_text: [] },
-          'Min Mins': { number: 45 },
-          Order: { number: 3 },
-          Done: { checkbox: false },
-          'Completed At': { date: null },
-          Energy: { rich_text: [] }
-        }
-      }
-    ] });
-    const req = { method: 'GET', query: { date: '2026-05-24' },
-                  headers: { authorization: 'Bearer p' } };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.tasks).toHaveLength(1);
-    expect(res.body.tasks[0].title).toBe('Boss');
-    expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({
-      database_id: 'db-id',
-      filter: { property: 'Date', date: { equals: '2026-05-24' } }
-    }));
-  });
-
-  it('returns 405 for non-GET', async () => {
-    const req = { method: 'POST', query: { date: '2026-05-24' },
-                  headers: { authorization: 'Bearer p' } };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(405);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/day.js`**
-
-```javascript
-import { checkAuth, unauthorized } from './_helpers/auth.js';
-import { getClient, getDatabaseId, rowToTask } from './_helpers/notion.js';
-
-export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
-  if (!checkAuth(req)) return unauthorized(res);
-  const date = req.query?.date;
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return res.status(400).json({ error: 'date param required (YYYY-MM-DD)' });
-  }
+function readAll() {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return structuredClone(DEFAULT_DATA);
   try {
-    const result = await getClient().databases.query({
-      database_id: getDatabaseId(),
-      filter: { property: 'Date', date: { equals: date } }
-    });
-    res.status(200).json({ tasks: result.results.map(rowToTask) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/day.js tests/api/day.test.js
-git commit -m "feat(api): GET /api/day handler"
-```
-
----
-
-### Task 11: POST /api/tasks (batch create)
-
-**Files:**
-- Create: `api/tasks.js`
-- Test: `tests/api/tasks.test.js`
-
-Accepts `{ tasks: [...] }` and creates all rows in parallel. Returns `{ created: [...with ids] }`.
-
-- [ ] **Step 1: Write failing tests**
-
-`tests/api/tasks.test.js`:
-
-```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockCreate = vi.fn();
-vi.mock('../../api/_helpers/notion.js', async (orig) => {
-  const real = await orig();
-  return {
-    ...real,
-    getClient: () => ({ pages: { create: mockCreate } }),
-    getDatabaseId: () => 'db-id'
-  };
-});
-
-import handler from '../../api/tasks.js';
-
-function makeRes() {
-  return {
-    statusCode: 200, body: null,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; return this; }
-  };
-}
-
-describe('POST /api/tasks', () => {
-  beforeEach(() => {
-    mockCreate.mockReset();
-    process.env.APP_PASSPHRASE = 'p';
-  });
-
-  it('returns 401 without auth', async () => {
-    const res = makeRes();
-    await handler({ method: 'POST', headers: {}, body: { tasks: [] } }, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 400 with no tasks array', async () => {
-    const res = makeRes();
-    await handler({ method: 'POST', headers: { authorization: 'Bearer p' }, body: {} }, res);
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('creates each task and returns ids', async () => {
-    mockCreate.mockImplementation(async ({ properties }) => ({
-      id: 'new-' + properties.Title.title[0].text.content
-    }));
-    const req = {
-      method: 'POST',
-      headers: { authorization: 'Bearer p' },
-      body: { tasks: [
-        { title: 'A', date: '2026-05-25', block: 1, blockTitle: 'M', type: 'power_up',
-          description: '', minMins: null, order: 0, done: false, completedAt: null, energy: '' },
-        { title: 'B', date: '2026-05-25', block: 1, blockTitle: 'M', type: 'boss',
-          description: '', minMins: 45, order: 1, done: false, completedAt: null, energy: '' }
-      ]}
+    const parsed = JSON.parse(raw);
+    return {
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      settings: { ...DEFAULT_DATA.settings, ...(parsed.settings ?? {}) }
     };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(201);
-    expect(res.body.created).toHaveLength(2);
-    expect(res.body.created[0].id).toBe('new-A');
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it('returns 405 for non-POST', async () => {
-    const res = makeRes();
-    await handler({ method: 'GET', headers: { authorization: 'Bearer p' } }, res);
-    expect(res.statusCode).toBe(405);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/tasks.js`**
-
-```javascript
-import { checkAuth, unauthorized } from './_helpers/auth.js';
-import { getClient, getDatabaseId, taskToProperties, rowToTask } from './_helpers/notion.js';
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
-  if (!checkAuth(req)) return unauthorized(res);
-  const tasks = req.body?.tasks;
-  if (!Array.isArray(tasks) || tasks.length === 0) {
-    return res.status(400).json({ error: 'tasks array required' });
+  } catch {
+    return structuredClone(DEFAULT_DATA);
   }
-  try {
-    const client = getClient();
-    const dbId = getDatabaseId();
-    const created = await Promise.all(tasks.map(t =>
-      client.pages.create({ parent: { database_id: dbId }, properties: taskToProperties(t) })
-    ));
-    res.status(201).json({ created: created.map(rowToTask) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+}
+
+function writeAll(data) {
+  localStorage.setItem(KEY, JSON.stringify(data));
+}
+
+function newId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+export async function loadDay(date) {
+  return readAll().tasks.filter(t => t.date === date);
+}
+
+export async function loadHistory(days = 30) {
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffISO = cutoff.toISOString().slice(0, 10);
+  return readAll().tasks.filter(t => t.date && t.date >= cutoffISO);
+}
+
+export async function createTasks(tasks) {
+  const data = readAll();
+  const created = tasks.map(t => ({ ...t, id: newId() }));
+  data.tasks.push(...created);
+  writeAll(data);
+  return created;
+}
+
+export async function updateTask(id, patch) {
+  const data = readAll();
+  const idx = data.tasks.findIndex(t => t.id === id);
+  if (idx === -1) throw new Error(`Task ${id} not found`);
+  data.tasks[idx] = { ...data.tasks[idx], ...patch };
+  writeAll(data);
+  return data.tasks[idx];
+}
+
+export async function deleteTask(id) {
+  const data = readAll();
+  data.tasks = data.tasks.filter(t => t.id !== id);
+  writeAll(data);
+}
+
+export async function exportAll() {
+  return readAll();
+}
+
+export async function importAll(blob) {
+  if (!blob || typeof blob !== 'object') throw new Error('Invalid backup file');
+  const tasks = Array.isArray(blob.tasks) ? blob.tasks : [];
+  const settings = { ...DEFAULT_DATA.settings, ...(blob.settings ?? {}) };
+  writeAll({ tasks, settings });
+}
+
+export async function clearAll() {
+  localStorage.removeItem(KEY);
+}
+
+export async function getSettings() {
+  return readAll().settings;
+}
+
+export async function setSetting(key, value) {
+  const data = readAll();
+  data.settings[key] = value;
+  writeAll(data);
 }
 ```
 
 - [ ] **Step 4: Run, verify pass**
 
 Run: `npm test`
-Expected: PASS.
+Expected: PASS, all storage tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/tasks.js tests/api/tasks.test.js
-git commit -m "feat(api): POST /api/tasks batch create"
+git add js/storage.js tests/storage.test.js
+git commit -m "feat(storage): localStorage-backed storage with export/import"
 ```
 
 ---
 
-### Task 12: PATCH and DELETE /api/task/[id]
+## Phase 4 — Frontend shell
+
+### Task 9: HTML + global CSS
 
 **Files:**
-- Create: `api/task/[id].js`
-- Test: `tests/api/task-id.test.js`
+- Create: `index.html`
+- Create: `css/styles.css`
 
-PATCH accepts a partial task; DELETE archives the page.
-
-- [ ] **Step 1: Write failing tests**
-
-`tests/api/task-id.test.js`:
-
-```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockUpdate = vi.fn();
-vi.mock('../../api/_helpers/notion.js', async (orig) => {
-  const real = await orig();
-  return {
-    ...real,
-    getClient: () => ({ pages: { update: mockUpdate } }),
-    getDatabaseId: () => 'db-id'
-  };
-});
-
-import handler from '../../api/task/[id].js';
-
-function makeRes() {
-  return { statusCode: 200, body: null,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; return this; } };
-}
-
-describe('PATCH /api/task/[id]', () => {
-  beforeEach(() => {
-    mockUpdate.mockReset();
-    process.env.APP_PASSPHRASE = 'p';
-  });
-
-  it('returns 401 without auth', async () => {
-    const res = makeRes();
-    await handler({ method: 'PATCH', headers: {}, query: { id: 'x' }, body: {} }, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('updates only the provided fields (Done + Completed At)', async () => {
-    mockUpdate.mockResolvedValue({
-      id: 'pg1',
-      properties: {
-        Title: { title: [{ plain_text: 'B' }] },
-        Date: { date: { start: '2026-05-24' } },
-        Block: { number: 1 },
-        'Block Title': { rich_text: [{ plain_text: 'M' }] },
-        Type: { select: { name: 'boss' } },
-        Description: { rich_text: [] },
-        'Min Mins': { number: 45 },
-        Order: { number: 0 },
-        Done: { checkbox: true },
-        'Completed At': { date: { start: '2026-05-24' } },
-        Energy: { rich_text: [] }
-      }
-    });
-    const req = {
-      method: 'PATCH', headers: { authorization: 'Bearer p' },
-      query: { id: 'pg1' },
-      body: { done: true, completedAt: '2026-05-24' }
-    };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.task.done).toBe(true);
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      page_id: 'pg1',
-      properties: expect.objectContaining({
-        Done: { checkbox: true },
-        'Completed At': { date: { start: '2026-05-24' } }
-      })
-    }));
-    // Did NOT include Title or other untouched fields
-    const props = mockUpdate.mock.calls[0][0].properties;
-    expect(props.Title).toBeUndefined();
-    expect(props.Date).toBeUndefined();
-  });
-
-  it('archives on DELETE', async () => {
-    mockUpdate.mockResolvedValue({});
-    const req = { method: 'DELETE', headers: { authorization: 'Bearer p' },
-                  query: { id: 'pg1' } };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(204);
-    expect(mockUpdate).toHaveBeenCalledWith({ page_id: 'pg1', archived: true });
-  });
-
-  it('returns 405 for unsupported method', async () => {
-    const res = makeRes();
-    await handler({ method: 'PUT', headers: { authorization: 'Bearer p' },
-                    query: { id: 'x' }, body: {} }, res);
-    expect(res.statusCode).toBe(405);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/task/[id].js`**
-
-```javascript
-import { checkAuth, unauthorized } from '../_helpers/auth.js';
-import { getClient, rowToTask } from '../_helpers/notion.js';
-
-function partialProperties(body) {
-  const out = {};
-  if ('title' in body)       out.Title = { title: body.title ? [{ type: 'text', text: { content: body.title } }] : [] };
-  if ('date' in body)        out.Date = body.date ? { date: { start: body.date } } : { date: null };
-  if ('block' in body)       out.Block = { number: body.block ?? null };
-  if ('blockTitle' in body)  out['Block Title'] = { rich_text: body.blockTitle ? [{ type: 'text', text: { content: body.blockTitle } }] : [] };
-  if ('type' in body)        out.Type = body.type ? { select: { name: body.type } } : { select: null };
-  if ('description' in body) out.Description = { rich_text: body.description ? [{ type: 'text', text: { content: body.description } }] : [] };
-  if ('minMins' in body)     out['Min Mins'] = { number: body.minMins ?? null };
-  if ('order' in body)       out.Order = { number: body.order ?? null };
-  if ('done' in body)        out.Done = { checkbox: !!body.done };
-  if ('completedAt' in body) out['Completed At'] = body.completedAt ? { date: { start: body.completedAt } } : { date: null };
-  if ('energy' in body)      out.Energy = { rich_text: body.energy ? [{ type: 'text', text: { content: body.energy } }] : [] };
-  return out;
-}
-
-export default async function handler(req, res) {
-  if (!checkAuth(req)) return unauthorized(res);
-  const id = req.query?.id;
-  if (!id) return res.status(400).json({ error: 'id required' });
-  const client = getClient();
-  try {
-    if (req.method === 'PATCH') {
-      const page = await client.pages.update({
-        page_id: id,
-        properties: partialProperties(req.body ?? {})
-      });
-      return res.status(200).json({ task: rowToTask(page) });
-    }
-    if (req.method === 'DELETE') {
-      await client.pages.update({ page_id: id, archived: true });
-      return res.status(204).end?.() ?? res.status(204).json({});
-    }
-    res.status(405).json({ error: 'method not allowed' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/task/[id].js tests/api/task-id.test.js
-git commit -m "feat(api): PATCH and DELETE /api/task/[id]"
-```
-
----
-
-### Task 13: GET /api/history
-
-**Files:**
-- Create: `api/history.js`
-- Test: `tests/api/history.test.js`
-
-Returns task rows for the last N days (default 30). Used by the streak calculation and history calendar.
-
-- [ ] **Step 1: Write failing tests**
-
-`tests/api/history.test.js`:
-
-```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockQuery = vi.fn();
-vi.mock('../../api/_helpers/notion.js', async (orig) => {
-  const real = await orig();
-  return {
-    ...real,
-    getClient: () => ({ databases: { query: mockQuery } }),
-    getDatabaseId: () => 'db-id'
-  };
-});
-
-import handler from '../../api/history.js';
-
-function makeRes() {
-  return { statusCode: 200, body: null,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; return this; } };
-}
-
-describe('GET /api/history', () => {
-  beforeEach(() => {
-    mockQuery.mockReset();
-    process.env.APP_PASSPHRASE = 'p';
-  });
-
-  it('returns 401 without auth', async () => {
-    const res = makeRes();
-    await handler({ method: 'GET', headers: {}, query: {} }, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('defaults days=30, queries on or after cutoff', async () => {
-    mockQuery.mockResolvedValue({ results: [] });
-    const req = { method: 'GET', headers: { authorization: 'Bearer p' }, query: {} };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.tasks).toEqual([]);
-    const call = mockQuery.mock.calls[0][0];
-    expect(call.filter.property).toBe('Date');
-    expect(call.filter.date.on_or_after).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('respects custom days param', async () => {
-    mockQuery.mockResolvedValue({ results: [] });
-    const req = { method: 'GET', headers: { authorization: 'Bearer p' }, query: { days: '7' } };
-    const res = makeRes();
-    await handler(req, res);
-    expect(res.statusCode).toBe(200);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/history.js`**
-
-```javascript
-import { checkAuth, unauthorized } from './_helpers/auth.js';
-import { getClient, getDatabaseId, rowToTask } from './_helpers/notion.js';
-import { todayISO, addDays } from '../public/js/lib/dates.js';
-
-export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
-  if (!checkAuth(req)) return unauthorized(res);
-  const days = Math.max(1, Math.min(365, Number(req.query?.days ?? 30)));
-  const cutoff = addDays(todayISO(), -days);
-  try {
-    const result = await getClient().databases.query({
-      database_id: getDatabaseId(),
-      filter: { property: 'Date', date: { on_or_after: cutoff } },
-      page_size: 100
-    });
-    res.status(200).json({ tasks: result.results.map(rowToTask) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/history.js tests/api/history.test.js
-git commit -m "feat(api): GET /api/history"
-```
-
----
-
-## Phase 4 — Frontend skeleton
-
-### Task 14: HTML shell + global CSS
-
-**Files:**
-- Create: `public/index.html`
-- Create: `public/css/styles.css`
-
-- [ ] **Step 1: Create `public/index.html`**
+- [ ] **Step 1: Create `index.html`**
 
 ```html
 <!DOCTYPE html>
@@ -1591,7 +894,7 @@ git commit -m "feat(api): GET /api/history"
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23111'/%3E%3Ctext x='50' y='70' font-family='Georgia,serif' font-size='62' font-weight='900' text-anchor='middle' fill='%23f5b800'%3ET%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
@@ -1613,27 +916,18 @@ git commit -m "feat(api): GET /api/history"
     <button class="fab" id="btn-plan-tomorrow">+ Plan tomorrow</button>
   </div>
 
-  <div class="drawer" id="drawer-plan"   hidden></div>
-  <div class="drawer" id="drawer-history" hidden></div>
+  <div class="drawer" id="drawer-plan"     hidden></div>
+  <div class="drawer" id="drawer-history"  hidden></div>
   <div class="drawer" id="drawer-settings" hidden></div>
-
-  <div class="passphrase-overlay" id="passphrase-overlay" hidden>
-    <div class="passphrase-box">
-      <h2>Passphrase</h2>
-      <input type="password" id="passphrase-input" autocomplete="off" />
-      <button id="passphrase-submit">Unlock</button>
-      <p class="passphrase-error" id="passphrase-error" hidden>Incorrect.</p>
-    </div>
-  </div>
 
   <div id="effects-layer" aria-hidden="true"></div>
 
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
 ```
 
-- [ ] **Step 2: Create `public/css/styles.css`**
+- [ ] **Step 2: Create `css/styles.css`**
 
 ```css
 :root {
@@ -1644,7 +938,6 @@ git commit -m "feat(api): GET /api/history"
   --text-dim: #8a8f9c;
   --accent: #f5b800;
   --boss: #f5b800;
-  --boss-dim: #5a4400;
   --green: #4ad27a;
   --red: #f25b5b;
   --blue: #5b9df2;
@@ -1656,6 +949,7 @@ git commit -m "feat(api): GET /api/history"
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; }
 
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
@@ -1664,7 +958,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .topbar-left, .topbar-right { display: flex; gap: 12px; align-items: center; }
 .level-badge { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
-.streak { font-size: 15px; color: var(--text); }
+.streak { font-size: 15px; }
 .icon-btn { background: transparent; border: none; color: var(--text); font-size: 18px; padding: 6px 8px; border-radius: 8px; }
 .icon-btn:hover { background: var(--surface-2); }
 
@@ -1686,19 +980,24 @@ main {
   display: flex; flex-direction: column; gap: 18px;
 }
 
+.empty-state {
+  text-align: center; color: var(--text-dim); padding: 40px 20px;
+  font-family: var(--font-display); font-size: 18px;
+}
+
 .block-card {
   background: var(--surface); border-radius: var(--radius); padding: 16px;
   box-shadow: var(--shadow);
 }
 .block-header {
-  display: flex; justify-content: space-between; align-items: baseline;
+  display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 12px;
 }
 .block-title { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
 .energy-picker { display: flex; gap: 6px; }
 .energy-picker button {
   background: transparent; border: 1px solid var(--surface-2); color: var(--text);
-  width: 30px; height: 30px; border-radius: 50%; font-size: 14px; padding: 0;
+  width: 32px; height: 32px; border-radius: 50%; font-size: 14px; padding: 0;
 }
 .energy-picker button.selected { background: var(--surface-2); border-color: var(--accent); }
 
@@ -1712,25 +1011,27 @@ main {
 .task-checkbox {
   width: 22px; height: 22px; border: 2px solid var(--text-dim); border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 2px; font-size: 13px; line-height: 1;
 }
 .task-row.done .task-checkbox { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .task-row.boss.done .task-checkbox { background: var(--boss); }
 .task-content { flex: 1; }
 .task-title { font-weight: 500; }
 .task-row.boss .task-title { color: var(--boss); font-weight: 600; }
-.task-desc { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+.task-desc { font-size: 13px; color: var(--text-dim); margin-top: 2px; white-space: pre-line; }
 .task-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
 .fab-container {
   position: fixed; bottom: 0; left: 0; right: 0; padding: 16px;
-  display: flex; justify-content: center;
+  display: flex; justify-content: center; z-index: 5;
   background: linear-gradient(180deg, transparent, var(--bg) 50%);
+  pointer-events: none;
 }
 .fab {
   background: var(--accent); color: var(--bg); font-weight: 600;
   padding: 14px 24px; border: none; border-radius: 999px; font-size: 15px;
   box-shadow: 0 4px 12px rgba(245,184,0,0.3);
+  pointer-events: auto;
 }
 
 .drawer {
@@ -1740,7 +1041,6 @@ main {
   box-shadow: 0 -8px 24px rgba(0,0,0,0.5);
   transform: translateY(100%); transition: transform 280ms cubic-bezier(.25,.1,.25,1);
 }
-.drawer:not([hidden]) { display: block; }
 .drawer.open { transform: translateY(0); }
 .drawer-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20;
@@ -1748,26 +1048,12 @@ main {
 }
 .drawer-backdrop.open { opacity: 1; }
 
-.passphrase-overlay {
-  position: fixed; inset: 0; background: var(--bg); z-index: 100;
-  display: flex; align-items: center; justify-content: center;
-}
-.passphrase-box {
-  background: var(--surface); padding: 32px; border-radius: var(--radius);
-  max-width: 320px; width: 90%; display: flex; flex-direction: column; gap: 12px;
-}
-.passphrase-box input { padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid var(--surface-2); background: var(--bg); color: var(--text); }
-.passphrase-box button { padding: 10px; background: var(--accent); color: var(--bg); border: none; border-radius: 8px; font-weight: 600; }
-.passphrase-error { color: var(--red); margin: 0; font-size: 13px; }
-
 #effects-layer {
-  position: fixed; inset: 0; pointer-events: none; z-index: 50;
-  overflow: hidden;
+  position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden;
 }
 .xp-popup {
   position: absolute; font-family: var(--font-display); font-weight: 700; font-size: 28px;
-  color: var(--accent);
-  animation: xp-float 900ms ease-out forwards;
+  color: var(--accent); animation: xp-float 900ms ease-out forwards;
 }
 .xp-popup.boss { font-size: 40px; color: var(--boss); }
 @keyframes xp-float {
@@ -1780,6 +1066,7 @@ main {
   position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
   background: var(--surface-2); padding: 10px 16px; border-radius: 999px;
   font-size: 14px; z-index: 60; box-shadow: var(--shadow);
+  max-width: 90%; text-align: center;
 }
 
 @media (max-width: 600px) {
@@ -1788,236 +1075,31 @@ main {
 }
 ```
 
-- [ ] **Step 3: Smoke-test in browser**
+- [ ] **Step 3: Smoke-test**
 
 Run: `npm run dev`
 Open: `http://localhost:3000`
-Expected: page loads, shows top bar with "Lv 0" and "🔥 0", an empty XP bar, and a "+ Plan tomorrow" button at the bottom. The passphrase overlay should be hidden (the JS hasn't shown it yet — that comes in later tasks).
+Expected: page loads with top bar (Lv 0, 🔥 0), empty XP bar, empty day area, "+ Plan tomorrow" button at bottom. No JS errors in console.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add public/index.html public/css/styles.css
+git add index.html css/styles.css
 git commit -m "feat(ui): HTML shell + global CSS"
 ```
 
 ---
 
-### Task 15: Passphrase prompt module
+### Task 10: Effects module
 
 **Files:**
-- Create: `public/js/ui/passphrase.js`
+- Create: `js/ui/effects.js`
 
-- [ ] **Step 1: Implement `public/js/ui/passphrase.js`**
-
-```javascript
-const KEY = 'timetable.passphrase';
-
-export function getStoredPassphrase() {
-  return localStorage.getItem(KEY);
-}
-
-export function setStoredPassphrase(p) {
-  localStorage.setItem(KEY, p);
-}
-
-export function clearStoredPassphrase() {
-  localStorage.removeItem(KEY);
-}
-
-export function showPassphrasePrompt({ errorMessage } = {}) {
-  return new Promise((resolve) => {
-    const overlay = document.getElementById('passphrase-overlay');
-    const input = document.getElementById('passphrase-input');
-    const submit = document.getElementById('passphrase-submit');
-    const err = document.getElementById('passphrase-error');
-    overlay.hidden = false;
-    input.value = '';
-    err.hidden = !errorMessage;
-    if (errorMessage) err.textContent = errorMessage;
-    input.focus();
-    function done() {
-      const value = input.value.trim();
-      if (!value) return;
-      overlay.hidden = true;
-      submit.removeEventListener('click', done);
-      input.removeEventListener('keydown', onEnter);
-      resolve(value);
-    }
-    function onEnter(e) {
-      if (e.key === 'Enter') done();
-    }
-    submit.addEventListener('click', done);
-    input.addEventListener('keydown', onEnter);
-  });
-}
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add public/js/ui/passphrase.js
-git commit -m "feat(ui): passphrase prompt module"
-```
-
----
-
-### Task 16: Storage module (proxy client + offline queue)
-
-**Files:**
-- Create: `public/js/storage.js`
-
-This module is the *only* thing in the frontend that talks to the network. It exposes `loadDay(date)`, `loadHistory(days)`, `createTasks(tasks)`, `updateTask(id, patch)`, `deleteTask(id)`, and `flushQueue()`. Failed writes go into a localStorage queue and replay on `flushQueue()` (called on app start and on network online events).
-
-- [ ] **Step 1: Implement `public/js/storage.js`**
+- [ ] **Step 1: Implement `js/ui/effects.js`**
 
 ```javascript
-import { getStoredPassphrase, showPassphrasePrompt, setStoredPassphrase, clearStoredPassphrase } from './ui/passphrase.js';
+import { getSettings, setSetting } from '../storage.js';
 
-const QUEUE_KEY = 'timetable.writeQueue';
-
-async function request(path, init = {}) {
-  let pass = getStoredPassphrase();
-  if (!pass) pass = await promptAndStore();
-  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${pass}`, ...(init.headers ?? {}) };
-  let res = await fetch(path, { ...init, headers });
-  if (res.status === 401) {
-    clearStoredPassphrase();
-    pass = await promptAndStore({ errorMessage: 'Incorrect passphrase.' });
-    headers.Authorization = `Bearer ${pass}`;
-    res = await fetch(path, { ...init, headers });
-  }
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { const j = await res.json(); msg = j.error ?? msg; } catch {}
-    throw new Error(msg);
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
-
-async function promptAndStore(opts) {
-  const p = await showPassphrasePrompt(opts);
-  setStoredPassphrase(p);
-  return p;
-}
-
-export async function loadDay(date) {
-  const { tasks } = await request(`/api/day?date=${encodeURIComponent(date)}`);
-  return tasks;
-}
-
-export async function loadHistory(days = 30) {
-  const { tasks } = await request(`/api/history?days=${days}`);
-  return tasks;
-}
-
-export async function createTasks(tasks) {
-  const { created } = await request('/api/tasks', { method: 'POST', body: JSON.stringify({ tasks }) });
-  return created;
-}
-
-export async function updateTask(id, patch) {
-  try {
-    const { task } = await request(`/api/task/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
-    return task;
-  } catch (e) {
-    enqueue({ op: 'update', id, patch });
-    throw e;
-  }
-}
-
-export async function deleteTask(id) {
-  try {
-    await request(`/api/task/${id}`, { method: 'DELETE' });
-  } catch (e) {
-    enqueue({ op: 'delete', id });
-    throw e;
-  }
-}
-
-function readQueue() {
-  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? '[]'); } catch { return []; }
-}
-function writeQueue(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
-function enqueue(item) {
-  const q = readQueue();
-  q.push(item);
-  writeQueue(q);
-}
-
-export async function flushQueue() {
-  const q = readQueue();
-  if (q.length === 0) return;
-  const remaining = [];
-  for (const item of q) {
-    try {
-      if (item.op === 'update') {
-        await request(`/api/task/${item.id}`, { method: 'PATCH', body: JSON.stringify(item.patch) });
-      } else if (item.op === 'delete') {
-        await request(`/api/task/${item.id}`, { method: 'DELETE' });
-      }
-    } catch {
-      remaining.push(item);
-    }
-  }
-  writeQueue(remaining);
-}
-
-window.addEventListener('online', () => { flushQueue().catch(() => {}); });
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add public/js/storage.js
-git commit -m "feat(ui): storage module — proxy client + offline write queue"
-```
-
----
-
-### Task 17: Top-bar render
-
-**Files:**
-- Create: `public/js/ui/topbar.js`
-
-- [ ] **Step 1: Implement `public/js/ui/topbar.js`**
-
-```javascript
-import { levelForTotalXp, xpToNextLevel } from '../lib/level.js';
-
-export function renderTopbar({ totalLifetimeXp, todayXp, streak }) {
-  const level = levelForTotalXp(totalLifetimeXp);
-  const toNext = xpToNextLevel(totalLifetimeXp);
-  const totalForLevel = todayXp + toNext;
-  const pct = totalForLevel === 0 ? 0 : Math.min(100, (todayXp / Math.max(todayXp + toNext, 1)) * 100);
-
-  document.getElementById('level-badge').textContent = `Lv ${level}`;
-  document.getElementById('streak').textContent = `🔥 ${streak}`;
-  document.getElementById('xp-fill').style.width = `${pct}%`;
-  document.getElementById('xp-text').textContent = `${todayXp} XP today`;
-}
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add public/js/ui/topbar.js
-git commit -m "feat(ui): top-bar render"
-```
-
----
-
-### Task 18: Effects module (confetti, XP popup, sounds, loot drops)
-
-**Files:**
-- Create: `public/js/ui/effects.js`
-
-Confetti is lazy-loaded from a CDN to avoid bundling. Sounds are inline base64 WAV or Web Audio API tones (simpler — Web Audio).
-
-- [ ] **Step 1: Implement `public/js/ui/effects.js`**
-
-```javascript
 let confettiFn = null;
 async function getConfetti() {
   if (confettiFn) return confettiFn;
@@ -2033,16 +1115,19 @@ function getAudio() {
   return audioCtx;
 }
 
-const SOUND_ENABLED_KEY = 'timetable.soundEnabled';
-export function isSoundEnabled() {
-  return localStorage.getItem(SOUND_ENABLED_KEY) !== 'false';
+let _soundEnabled = true;
+export async function loadSoundPref() {
+  const s = await getSettings();
+  _soundEnabled = s.soundEnabled !== false;
 }
-export function setSoundEnabled(v) {
-  localStorage.setItem(SOUND_ENABLED_KEY, v ? 'true' : 'false');
+export function isSoundEnabled() { return _soundEnabled; }
+export async function setSoundEnabled(v) {
+  _soundEnabled = !!v;
+  await setSetting('soundEnabled', _soundEnabled);
 }
 
 function tone(freq, duration = 0.1, type = 'sine', volume = 0.15) {
-  if (!isSoundEnabled()) return;
+  if (!_soundEnabled) return;
   try {
     const ctx = getAudio();
     const osc = ctx.createOscillator();
@@ -2057,9 +1142,7 @@ function tone(freq, duration = 0.1, type = 'sine', volume = 0.15) {
   } catch {}
 }
 
-export function playTick() {
-  tone(880, 0.08, 'triangle', 0.12);
-}
+export function playTick() { tone(880, 0.08, 'triangle', 0.12); }
 export function playBossKill() {
   tone(440, 0.18, 'sawtooth', 0.18);
   setTimeout(() => tone(660, 0.18, 'sawtooth', 0.18), 90);
@@ -2082,8 +1165,10 @@ export async function confettiBurst({ x, y, big = false } = {}) {
   fn({
     particleCount: big ? 100 : 40,
     spread: big ? 90 : 60,
-    origin: { x: (x ?? window.innerWidth / 2) / window.innerWidth,
-              y: (y ?? window.innerHeight / 2) / window.innerHeight },
+    origin: {
+      x: (x ?? window.innerWidth / 2) / window.innerWidth,
+      y: (y ?? window.innerHeight / 2) / window.innerHeight
+    },
     colors: big ? ['#f5b800', '#ffd45a', '#fff', '#5b9df2'] : ['#f5b800', '#ffd45a']
   });
 }
@@ -2091,7 +1176,6 @@ export async function confettiBurst({ x, y, big = false } = {}) {
 export function showBossBanner() {
   const layer = document.getElementById('effects-layer');
   const el = document.createElement('div');
-  el.className = 'boss-banner';
   el.textContent = 'BOSS DEFEATED';
   el.style.cssText = `
     position: absolute; top: 25%; left: 50%; transform: translate(-50%, 0);
@@ -2158,30 +1242,68 @@ export function showLootIfDue() {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 2800);
 }
+
+export function toast(message) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add public/js/ui/effects.js
-git commit -m "feat(ui): effects module — confetti, xp popup, sounds, loot drops"
+git add js/ui/effects.js
+git commit -m "feat(ui): effects — confetti, xp popup, sounds, loot drops, toast"
 ```
 
 ---
 
-### Task 19: Day view rendering
+### Task 11: Top-bar render
 
 **Files:**
-- Create: `public/js/ui/day.js`
+- Create: `js/ui/topbar.js`
 
-- [ ] **Step 1: Implement `public/js/ui/day.js`**
+- [ ] **Step 1: Implement `js/ui/topbar.js`**
+
+```javascript
+import { levelForTotalXp, xpToNextLevel } from '../lib/level.js';
+
+export function renderTopbar({ totalLifetimeXp, todayXp, streak }) {
+  const level = levelForTotalXp(totalLifetimeXp);
+  const toNext = xpToNextLevel(totalLifetimeXp);
+  const pct = (toNext + todayXp) === 0 ? 0 : Math.min(100, (todayXp / Math.max(todayXp + toNext, 1)) * 100);
+
+  document.getElementById('level-badge').textContent = `Lv ${level}`;
+  document.getElementById('streak').textContent = `🔥 ${streak}`;
+  document.getElementById('xp-fill').style.width = `${pct}%`;
+  document.getElementById('xp-text').textContent = `${todayXp} XP today`;
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add js/ui/topbar.js
+git commit -m "feat(ui): top-bar render"
+```
+
+---
+
+### Task 12: Day view rendering
+
+**Files:**
+- Create: `js/ui/day.js`
+
+- [ ] **Step 1: Implement `js/ui/day.js`**
 
 ```javascript
 import { groupByBlock } from '../lib/aggregate.js';
 
 let onTaskToggleHandler = null;
 let onEnergyPickHandler = null;
-
 export function onTaskToggle(fn) { onTaskToggleHandler = fn; }
 export function onEnergyPick(fn) { onEnergyPickHandler = fn; }
 
@@ -2190,18 +1312,14 @@ const ENERGY_EMOJIS = ['😩', '😐', '🙂', '⚡'];
 export function renderDay(tasks) {
   const root = document.getElementById('day-view');
   root.innerHTML = '';
-
   if (tasks.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.style.cssText = 'text-align:center; color:var(--text-dim); padding:40px 20px; font-family:var(--font-display); font-size:18px;';
-    empty.textContent = 'No plan for today. Tap "Plan tomorrow" to start.';
+    empty.textContent = 'No plan for today. Tap "+ Plan tomorrow" to start.';
     root.appendChild(empty);
     return;
   }
-
-  const groups = groupByBlock(tasks);
-  for (const group of groups) {
+  for (const group of groupByBlock(tasks)) {
     root.appendChild(renderBlock(group));
   }
 }
@@ -2209,7 +1327,6 @@ export function renderDay(tasks) {
 function renderBlock(group) {
   const card = document.createElement('section');
   card.className = 'block-card';
-  card.dataset.blockIndex = group.blockIndex;
 
   const header = document.createElement('div');
   header.className = 'block-header';
@@ -2225,19 +1342,13 @@ function renderBlock(group) {
     const b = document.createElement('button');
     b.textContent = emoji;
     if (group.energy === emoji) b.classList.add('selected');
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      onEnergyPickHandler?.(group, emoji);
-    });
+    b.addEventListener('click', (e) => { e.stopPropagation(); onEnergyPickHandler?.(group, emoji); });
     energy.appendChild(b);
   }
   header.appendChild(energy);
   card.appendChild(header);
 
-  for (const t of group.tasks) {
-    card.appendChild(renderTask(t));
-  }
-
+  for (const t of group.tasks) card.appendChild(renderTask(t));
   return card;
 }
 
@@ -2275,11 +1386,7 @@ function renderTask(t) {
   }
 
   row.appendChild(content);
-
-  row.addEventListener('click', () => {
-    onTaskToggleHandler?.(t, row);
-  });
-
+  row.addEventListener('click', () => onTaskToggleHandler?.(t, row));
   return row;
 }
 ```
@@ -2287,157 +1394,18 @@ function renderTask(t) {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add public/js/ui/day.js
-git commit -m "feat(ui): day view rendering with block cards and tasks"
+git add js/ui/day.js
+git commit -m "feat(ui): day view rendering"
 ```
 
 ---
 
-### Task 20: app.js — orchestrate load, render, check-off
+### Task 13: Drawer base component
 
 **Files:**
-- Create: `public/js/app.js`
+- Create: `js/ui/drawer.js`
 
-- [ ] **Step 1: Implement `public/js/app.js`** (initial version — drawers added in later tasks)
-
-```javascript
-import { todayISO } from './lib/dates.js';
-import { summarizeDay } from './lib/aggregate.js';
-import { computeStreak } from './lib/streak.js';
-import { totalXpForTasks } from './lib/xp.js';
-import { loadDay, loadHistory, updateTask, flushQueue } from './storage.js';
-import { renderTopbar } from './ui/topbar.js';
-import { renderDay, onTaskToggle, onEnergyPick } from './ui/day.js';
-import { confettiBurst, xpPopup, playTick, playBossKill, showBossBanner, showLootIfDue } from './ui/effects.js';
-
-const state = {
-  date: todayISO(),
-  tasks: [],
-  history: []
-};
-
-async function refresh() {
-  try {
-    state.tasks = await loadDay(state.date);
-    state.history = await loadHistory(60);
-    renderAll();
-  } catch (e) {
-    toast(`Load failed: ${e.message}`);
-  }
-}
-
-function renderAll() {
-  const { totalXp } = summarizeDay(state.tasks);
-  const lifetimeXp = state.history.reduce((s, t) => s + (t.done ? xpFor(t) : 0), 0);
-  const dayBuckets = bucketHistoryByDate(state.history);
-  const { streak } = computeStreak(dayBuckets, state.date);
-  renderTopbar({ totalLifetimeXp: lifetimeXp, todayXp: totalXp, streak });
-  renderDay(state.tasks);
-}
-
-function xpFor(t) {
-  return { yolo: 10, power_up: 20, regular: 20, boss: 50 }[t.type] ?? 0;
-}
-
-function bucketHistoryByDate(allTasks) {
-  const m = new Map();
-  for (const t of allTasks) {
-    if (!t.date) continue;
-    if (!m.has(t.date)) m.set(t.date, 0);
-    if (t.type === 'boss' && t.done) m.set(t.date, m.get(t.date) + 1);
-  }
-  return [...m.entries()]
-    .map(([date, bossesCompleted]) => ({ date, bossesCompleted }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-onTaskToggle(async (task, rowEl) => {
-  const newDone = !task.done;
-  const completedAt = newDone ? todayISO() : null;
-  // optimistic update
-  const idx = state.tasks.findIndex(t => t.id === task.id);
-  const prev = state.tasks[idx];
-  state.tasks[idx] = { ...prev, done: newDone, completedAt };
-  renderAll();
-
-  if (newDone) {
-    const rect = rowEl.getBoundingClientRect();
-    const amount = xpFor(task);
-    const x = rect.right - 20;
-    const y = rect.top;
-    xpPopup({ x, y, amount, kind: task.type === 'boss' ? 'boss' : 'normal' });
-    confettiBurst({ x, y, big: task.type === 'boss' });
-    if (task.type === 'boss') {
-      playBossKill();
-      showBossBanner();
-    } else {
-      playTick();
-    }
-    showLootIfDue();
-  }
-
-  try {
-    await updateTask(task.id, { done: newDone, completedAt });
-  } catch (e) {
-    state.tasks[idx] = prev;
-    renderAll();
-    toast(`Save failed: ${e.message}. Queued for retry.`);
-  }
-});
-
-onEnergyPick(async (group, emoji) => {
-  // Apply emoji to every task in the block
-  const updates = state.tasks.filter(t => t.block === group.blockIndex);
-  for (const t of updates) t.energy = emoji;
-  renderAll();
-  await Promise.all(updates.map(t => updateTask(t.id, { energy: emoji }).catch(() => {})));
-});
-
-function toast(message) {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = message;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
-}
-
-(async function init() {
-  await flushQueue().catch(() => {});
-  await refresh();
-})();
-```
-
-- [ ] **Step 2: Manual browser test**
-
-Run: `npm run dev` (after setting up `.env.local` with NOTION_TOKEN, NOTION_DATABASE_ID, APP_PASSPHRASE — and having created the Notion DB with the columns from the spec).
-
-Open: `http://localhost:3000`
-- Expect passphrase prompt → enter passphrase → unlocks.
-- If the Notion DB has tasks for today, they should render.
-- Click a task → confetti, XP popup, top bar XP increments. Boss row shows gold + bigger celebration.
-- Reload page → state persists (came from Notion).
-
-If no tasks exist yet, manually add a row in the Notion DB with Date = today's date, Block = 1, Type = boss, Title = "test boss", Done = unchecked. Reload site to verify.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add public/js/app.js
-git commit -m "feat(ui): app.js orchestration — load, render, check-off"
-```
-
----
-
-## Phase 5 — Night-planning drawer
-
-### Task 21: Drawer base behavior
-
-**Files:**
-- Create: `public/js/ui/drawer.js`
-
-A reusable drawer that wraps any content with a slide-up animation and backdrop.
-
-- [ ] **Step 1: Implement `public/js/ui/drawer.js`**
+- [ ] **Step 1: Implement `js/ui/drawer.js`**
 
 ```javascript
 export function openDrawer(drawerEl, contentBuilder) {
@@ -2475,30 +1443,165 @@ export function closeDrawer(drawerEl) {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add public/js/ui/drawer.js
-git commit -m "feat(ui): generic drawer slide-up component"
+git add js/ui/drawer.js
+git commit -m "feat(ui): generic slide-up drawer"
 ```
 
 ---
 
-### Task 22: Plan-tomorrow drawer content
+## Phase 5 — Orchestration
+
+### Task 14: app.js — load, render, check-off, energy
 
 **Files:**
-- Modify: `public/js/app.js` — wire up the "+ Plan tomorrow" button
-- Create: `public/js/ui/plan-drawer.js`
+- Create: `js/app.js`
 
-The plan drawer:
-1. Computes tomorrow's date.
-2. Loads tasks from yesterday (or, more precisely, today's current plan) and uses it as the template skeleton.
-3. Renders one section per block with editable fields: block title, power-up title + description, yolo title + minMins, additional regular tasks (add/remove), boss title + minMins.
-4. "+ Add block" button.
-5. "Save" → calls `createTasks` with the full batch.
-
-- [ ] **Step 1: Implement `public/js/ui/plan-drawer.js`**
+- [ ] **Step 1: Implement `js/app.js`** (drawers wired in later tasks)
 
 ```javascript
-import { addDays, todayISO } from '../lib/dates.js';
+import { todayISO, addDays } from './lib/dates.js';
+import { summarizeDay } from './lib/aggregate.js';
+import { computeStreak } from './lib/streak.js';
+import { XP_VALUES, xpForTask } from './lib/xp.js';
+import { loadDay, loadHistory, updateTask } from './storage.js';
+import { renderTopbar } from './ui/topbar.js';
+import { renderDay, onTaskToggle, onEnergyPick } from './ui/day.js';
+import {
+  confettiBurst, xpPopup, playTick, playBossKill, showBossBanner, showLootIfDue, toast, loadSoundPref
+} from './ui/effects.js';
 
+const state = {
+  date: todayISO(),
+  tasks: [],
+  history: []
+};
+
+async function refresh() {
+  state.tasks = await loadDay(state.date);
+  state.history = await loadHistory(60);
+  renderAll();
+}
+
+function renderAll() {
+  const { totalXp } = summarizeDay(state.tasks);
+  const lifetimeXp = state.history.reduce((s, t) => s + xpForTask(t), 0);
+  const dayBuckets = bucketHistoryByDate(state.history);
+  const { streak } = computeStreak(dayBuckets, state.date);
+  renderTopbar({ totalLifetimeXp: lifetimeXp, todayXp: totalXp, streak });
+  renderDay(state.tasks);
+}
+
+function bucketHistoryByDate(allTasks) {
+  const m = new Map();
+  for (const t of allTasks) {
+    if (!t.date) continue;
+    if (!m.has(t.date)) m.set(t.date, 0);
+    if (t.type === 'boss' && t.done) m.set(t.date, m.get(t.date) + 1);
+  }
+  return [...m.entries()]
+    .map(([date, bossesCompleted]) => ({ date, bossesCompleted }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+onTaskToggle(async (task, rowEl) => {
+  const newDone = !task.done;
+  const completedAt = newDone ? todayISO() : null;
+  const idx = state.tasks.findIndex(t => t.id === task.id);
+  const prev = state.tasks[idx];
+  state.tasks[idx] = { ...prev, done: newDone, completedAt };
+  renderAll();
+
+  if (newDone) {
+    const rect = rowEl.getBoundingClientRect();
+    const amount = XP_VALUES[task.type] ?? 0;
+    const x = rect.right - 20;
+    const y = rect.top;
+    xpPopup({ x, y, amount, kind: task.type === 'boss' ? 'boss' : 'normal' });
+    confettiBurst({ x, y, big: task.type === 'boss' }).catch(() => {});
+    if (task.type === 'boss') {
+      playBossKill();
+      showBossBanner();
+    } else {
+      playTick();
+    }
+    showLootIfDue();
+  }
+
+  try {
+    await updateTask(task.id, { done: newDone, completedAt });
+    // Refresh history in background so lifetime XP and streak update
+    state.history = await loadHistory(60);
+    renderAll();
+  } catch (e) {
+    state.tasks[idx] = prev;
+    renderAll();
+    toast(`Save failed: ${e.message}`);
+  }
+});
+
+onEnergyPick(async (group, emoji) => {
+  const updates = state.tasks.filter(t => t.block === group.blockIndex);
+  for (const t of updates) t.energy = emoji;
+  renderAll();
+  for (const t of updates) {
+    await updateTask(t.id, { energy: emoji }).catch(() => {});
+  }
+});
+
+(async function init() {
+  await loadSoundPref();
+  await refresh();
+})();
+```
+
+- [ ] **Step 2: Manual browser test**
+
+Run: `npm run dev`
+Expected:
+- Site loads cleanly. No console errors.
+- Empty state shows ("No plan for today. Tap '+ Plan tomorrow' to start.")
+- Top bar shows Lv 0, 🔥 0, 0 XP today.
+
+(Can't fully test check-off until we have tasks, which requires the plan drawer in Task 16.)
+
+- [ ] **Step 3: Manually create one task in localStorage to test check-off**
+
+In browser devtools console:
+
+```javascript
+localStorage.setItem('timetable.data', JSON.stringify({
+  tasks: [
+    { id: 'test1', date: new Date().toISOString().slice(0,10), block: 1, blockTitle: 'Morning', type: 'boss', title: 'Test boss', description: '', minMins: 45, order: 0, done: false, completedAt: null, energy: '' }
+  ],
+  settings: { soundEnabled: true }
+}));
+location.reload();
+```
+
+Expected: Morning block appears with a boss task. Tap it → confetti, +50 XP popup, boss banner, gold check, XP bar fills. Reload → still done.
+
+- [ ] **Step 4: Wipe test data and commit**
+
+In console: `localStorage.removeItem('timetable.data'); location.reload();`
+
+```bash
+git add js/app.js
+git commit -m "feat(ui): app.js orchestration — load, render, check-off, energy"
+```
+
+---
+
+## Phase 6 — Plan-tomorrow drawer
+
+### Task 15: Plan-tomorrow drawer
+
+**Files:**
+- Create: `js/ui/plan-drawer.js`
+- Modify: `js/app.js` (wire up the "+ Plan tomorrow" button)
+
+- [ ] **Step 1: Implement `js/ui/plan-drawer.js`**
+
+```javascript
 export function buildPlanDrawer({ skeleton, targetDate, onSave, onCancel }) {
   return (root) => {
     root.style.maxHeight = '90vh';
@@ -2508,7 +1611,6 @@ export function buildPlanDrawer({ skeleton, targetDate, onSave, onCancel }) {
     root.appendChild(h);
 
     const blocksContainer = document.createElement('div');
-    blocksContainer.id = 'plan-blocks';
     root.appendChild(blocksContainer);
 
     const state = { blocks: skeleton.length > 0 ? structuredClone(skeleton) : [defaultBlock(1)] };
@@ -2549,10 +1651,10 @@ function defaultBlock(idx) {
   return {
     blockIndex: idx,
     blockTitle: titles[idx - 1] ?? `Block ${idx}`,
-    powerUp:    { title: 'Power Up', description: '1. Eat\n2. Call\n3. Text' },
-    yolo:       { title: 'Yolo task', minMins: 30 },
-    regulars:   [],
-    boss:       { title: '', minMins: 45 }
+    powerUp:  { title: 'Power Up', description: '1. Eat\n2. Call\n3. Text' },
+    yolo:     { title: 'Yolo task', minMins: 30 },
+    regulars: [],
+    boss:     { title: '', minMins: 45 }
   };
 }
 
@@ -2578,9 +1680,8 @@ function renderBlock(b, idx, state, rerender) {
 
   card.appendChild(makeField('Power Up title', b.powerUp.title, v => b.powerUp.title = v));
   card.appendChild(makeTextarea('Power Up sub-items', b.powerUp.description, v => b.powerUp.description = v));
-  card.appendChild(makeFieldPair('Yolo title', b.yolo.title, v => b.yolo.title = v, 'Min mins', b.yolo.minMins, v => b.yolo.minMins = Number(v)));
+  card.appendChild(makeFieldPair('Yolo title', b.yolo.title, v => b.yolo.title = v, 'Min', b.yolo.minMins, v => b.yolo.minMins = Number(v) || null));
 
-  // Regulars
   const regHeader = document.createElement('div');
   regHeader.textContent = 'Other tasks';
   regHeader.style.cssText = 'font-size:13px; color:var(--text-dim); margin:10px 0 4px;';
@@ -2598,60 +1699,46 @@ function renderBlock(b, idx, state, rerender) {
   addReg.addEventListener('click', () => { b.regulars.push({ title: '', minMins: 45 }); rerender(); });
   card.appendChild(addReg);
 
-  card.appendChild(makeFieldPair('⚔ Boss title', b.boss.title, v => b.boss.title = v, 'Min mins', b.boss.minMins, v => b.boss.minMins = Number(v)));
+  card.appendChild(makeFieldPair('⚔ Boss title', b.boss.title, v => b.boss.title = v, 'Min', b.boss.minMins, v => b.boss.minMins = Number(v) || null));
 
   return card;
 }
 
 function makeField(label, value, onChange) {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'margin: 6px 0;';
-  const l = document.createElement('div');
-  l.textContent = label;
+  const wrap = document.createElement('div'); wrap.style.cssText = 'margin: 6px 0;';
+  const l = document.createElement('div'); l.textContent = label;
   l.style.cssText = 'font-size:11px; color:var(--text-dim); margin-bottom:2px;';
-  const i = document.createElement('input');
-  i.value = value ?? '';
+  const i = document.createElement('input'); i.value = value ?? '';
   i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px;';
   i.addEventListener('input', () => onChange(i.value));
-  wrap.append(l, i);
-  return wrap;
+  wrap.append(l, i); return wrap;
 }
 
 function makeTextarea(label, value, onChange) {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'margin:6px 0;';
-  const l = document.createElement('div');
-  l.textContent = label;
+  const wrap = document.createElement('div'); wrap.style.cssText = 'margin:6px 0;';
+  const l = document.createElement('div'); l.textContent = label;
   l.style.cssText = 'font-size:11px; color:var(--text-dim); margin-bottom:2px;';
-  const i = document.createElement('textarea');
-  i.value = value ?? '';
-  i.rows = 3;
-  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px; font-family:inherit; resize:vertical;';
+  const i = document.createElement('textarea'); i.value = value ?? ''; i.rows = 3;
+  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px; resize:vertical;';
   i.addEventListener('input', () => onChange(i.value));
-  wrap.append(l, i);
-  return wrap;
+  wrap.append(l, i); return wrap;
 }
 
-function makeFieldPair(label1, v1, on1, label2, v2, on2) {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; gap:8px; margin:6px 0;';
-  const main = makeField(label1, v1, on1); main.style.flex = '3';
-  const min = makeField(label2, v2, on2); min.style.flex = '1';
-  wrap.append(main, min);
-  return wrap;
+function makeFieldPair(l1, v1, on1, l2, v2, on2) {
+  const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex; gap:8px; margin:6px 0;';
+  const m = makeField(l1, v1, on1); m.style.flex = '3';
+  const n = makeField(l2, v2, on2); n.style.flex = '1';
+  wrap.append(m, n); return wrap;
 }
 
-function makeFieldPairWithRemove(label1, v1, on1, label2, v2, on2, onRemove) {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; gap:6px; align-items:flex-end; margin:4px 0;';
-  const main = makeField(label1, v1, on1); main.style.flex = '3';
-  const min = makeField(label2, v2, on2); min.style.flex = '1';
-  const rm = document.createElement('button');
-  rm.textContent = '×';
-  rm.style.cssText = 'background:transparent; color:var(--text-dim); border:none; font-size:20px; padding: 0 6px;';
+function makeFieldPairWithRemove(l1, v1, on1, l2, v2, on2, onRemove) {
+  const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex; gap:6px; align-items:flex-end; margin:4px 0;';
+  const m = makeField(l1, v1, on1); m.style.flex = '3';
+  const n = makeField(l2, v2, on2); n.style.flex = '1';
+  const rm = document.createElement('button'); rm.textContent = '×';
+  rm.style.cssText = 'background:transparent; color:var(--text-dim); border:none; font-size:20px; padding:0 6px;';
   rm.addEventListener('click', onRemove);
-  wrap.append(main, min, rm);
-  return wrap;
+  wrap.append(m, n, rm); return wrap;
 }
 
 function blocksToTasks(blocks, date) {
@@ -2696,14 +1783,14 @@ export function tasksToSkeleton(tasks) {
     const b = byBlock.get(t.block);
     if (t.type === 'power_up') { b.powerUp.title = t.title; b.powerUp.description = t.description; }
     else if (t.type === 'yolo') { b.yolo.title = t.title; b.yolo.minMins = t.minMins ?? 30; }
-    else if (t.type === 'boss') { b.boss.title = ''; b.boss.minMins = t.minMins ?? 45; }
-    // regulars are not carried over by default — bosses/yolos change daily
+    else if (t.type === 'boss') { b.boss.minMins = t.minMins ?? 45; /* boss title NOT carried — daily */ }
+    // regulars NOT carried — daily
   }
   return [...byBlock.values()].sort((a, b) => a.blockIndex - b.blockIndex);
 }
 ```
 
-- [ ] **Step 2: Wire up in `public/js/app.js`** — add at the bottom of file, after `init()`:
+- [ ] **Step 2: Wire up in `js/app.js`** — append after the IIFE:
 
 ```javascript
 import { openDrawer, closeDrawer } from './ui/drawer.js';
@@ -2712,8 +1799,8 @@ import { createTasks } from './storage.js';
 
 document.getElementById('btn-plan-tomorrow').addEventListener('click', async () => {
   const tomorrow = addDays(state.date, 1);
-  // Use today's plan as the skeleton (carries over Power Up structure)
-  const skeleton = tasksToSkeleton(state.tasks);
+  const todayTasks = await loadDay(state.date);
+  const skeleton = tasksToSkeleton(todayTasks);
   const drawer = document.getElementById('drawer-plan');
   openDrawer(drawer, buildPlanDrawer({
     skeleton,
@@ -2732,41 +1819,39 @@ document.getElementById('btn-plan-tomorrow').addEventListener('click', async () 
 });
 ```
 
-Also import `addDays` at top of file:
-```javascript
-import { todayISO, addDays } from './lib/dates.js';
-```
-(Replace the existing single import.)
-
 - [ ] **Step 3: Manual browser test**
 
 Run: `npm run dev`
 - Tap "+ Plan tomorrow".
-- Drawer slides up, prefilled with today's structure (or default skeleton if today is empty).
-- Edit a block title, change Power Up sub-items, set Boss task.
-- Tap "Save plan" → drawer closes, toast confirms.
-- In Notion, verify rows created with tomorrow's date.
+- Drawer slides up. Default skeleton with Morning block + Power Up sub-items prefilled.
+- Add a block. Edit titles. Add a boss. Save.
+- Re-open dev tools → check localStorage `timetable.data` → tomorrow's tasks are present.
+- Reload site. Today's view still empty. Manually change today's date in app state OR re-open the drawer and inspect.
+
+To verify the data more directly, in console:
+```javascript
+JSON.parse(localStorage.getItem('timetable.data')).tasks
+```
+Should include the new tasks dated tomorrow.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add public/js/ui/plan-drawer.js public/js/app.js
-git commit -m "feat(ui): night-planning drawer with prefilled template"
+git add js/ui/plan-drawer.js js/app.js
+git commit -m "feat(ui): night-planning drawer with template"
 ```
 
 ---
 
-## Phase 6 — History view
+## Phase 7 — History view
 
-### Task 23: History calendar drawer
+### Task 16: History calendar drawer
 
 **Files:**
-- Create: `public/js/ui/history.js`
-- Modify: `public/js/app.js` — wire up the calendar icon
+- Create: `js/ui/history.js`
+- Modify: `js/app.js`
 
-`history.js` exports a builder that renders a 30-day mini calendar. Each day's cell is colored by completion status. Click a day to see its tasks (read-only).
-
-- [ ] **Step 1: Implement `public/js/ui/history.js`**
+- [ ] **Step 1: Implement `js/ui/history.js`**
 
 ```javascript
 import { addDays, todayISO, isoWeekStart } from '../lib/dates.js';
@@ -2789,14 +1874,12 @@ export function buildHistoryDrawer({ history, onClose, onPickDate }) {
 
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:12px;';
-    // Header row: M T W T F S S
     for (const d of ['M','T','W','T','F','S','S']) {
       const cell = document.createElement('div');
       cell.textContent = d;
       cell.style.cssText = 'text-align:center; color:var(--text-dim); font-size:11px;';
       grid.appendChild(cell);
     }
-    // Start from 4 weeks ago (Monday)
     const start = isoWeekStart(addDays(today, -28));
     for (let i = 0; i < 35; i++) {
       const date = addDays(start, i);
@@ -2804,8 +1887,7 @@ export function buildHistoryDrawer({ history, onClose, onPickDate }) {
       const sum = summarizeDay(tasks);
       const cell = document.createElement('button');
       cell.style.cssText = 'aspect-ratio:1; border:none; border-radius:6px; font-size:11px; padding:0; cursor:pointer;';
-      const dayNum = Number(date.split('-')[2]);
-      cell.textContent = String(dayNum);
+      cell.textContent = String(Number(date.split('-')[2]));
       let bg = 'var(--surface-2)', color = 'var(--text-dim)';
       if (tasks.length > 0) {
         if (sum.completionStatus === 'all-bosses') { bg = 'var(--accent)'; color = 'var(--bg)'; }
@@ -2858,16 +1940,16 @@ export function renderHistoryDetail(date, tasks) {
     root.appendChild(empty);
     return;
   }
-  for (const t of tasks.sort((a, b) => (a.block - b.block) || (a.order - b.order))) {
+  for (const t of [...tasks].sort((a, b) => (a.block - b.block) || (a.order - b.order))) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; gap:8px; font-size:13px; padding:4px 0; color: ' + (t.done ? 'var(--text-dim)' : 'var(--text)');
-    row.innerHTML = `<span>${t.done ? '✓' : '○'}</span> <span>${t.blockTitle}</span> <span>${t.type === 'boss' ? '⚔ ' : ''}${t.title}</span>`;
+    row.style.cssText = 'display:flex; gap:8px; font-size:13px; padding:4px 0; color:' + (t.done ? 'var(--text-dim)' : 'var(--text)');
+    row.innerHTML = `<span>${t.done ? '✓' : '○'}</span><span>${t.blockTitle}</span><span>${t.type === 'boss' ? '⚔ ' : ''}${t.title}</span>`;
     root.appendChild(row);
   }
 }
 ```
 
-- [ ] **Step 2: Wire up in `public/js/app.js`** — append:
+- [ ] **Step 2: Wire up in `js/app.js`** — append:
 
 ```javascript
 import { buildHistoryDrawer, renderHistoryDetail } from './ui/history.js';
@@ -2885,230 +1967,117 @@ document.getElementById('btn-history').addEventListener('click', () => {
 - [ ] **Step 3: Manual browser test**
 
 Run: `npm run dev`
-- Tap 📅 in top bar.
-- Calendar opens showing the past 5 weeks (4 back + current).
-- Today is outlined. Days with all-bosses-done are gold, partials green, missed red.
-- Click a past day → its tasks list appears below.
+- Tap 📅.
+- Calendar opens. Today is outlined. Past days from your test plans are colored.
+- Click a past day → its tasks render below.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add public/js/ui/history.js public/js/app.js
-git commit -m "feat(ui): history calendar drawer with daily detail"
+git add js/ui/history.js js/app.js
+git commit -m "feat(ui): history calendar drawer"
 ```
 
 ---
 
-## Phase 7 — Settings, DB bootstrap, README
+## Phase 8 — Settings + export/import
 
-### Task 24: Settings drawer + sound toggle + DB bootstrap
+### Task 17: Settings drawer
 
 **Files:**
-- Create: `public/js/ui/settings.js`
-- Create: `api/bootstrap.js`
-- Create: `tests/api/bootstrap.test.js`
-- Modify: `public/js/app.js`
-- Modify: `public/js/storage.js`
+- Create: `js/ui/settings.js`
+- Modify: `js/app.js`
 
-`bootstrap.js` is a one-time endpoint that creates the Notion database with the correct schema inside a chosen parent page. The user pastes a parent page ID once.
-
-- [ ] **Step 1: Write failing test for bootstrap endpoint**
-
-`tests/api/bootstrap.test.js`:
-
-```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockCreate = vi.fn();
-vi.mock('../../api/_helpers/notion.js', async (orig) => {
-  const real = await orig();
-  return {
-    ...real,
-    getClient: () => ({ databases: { create: mockCreate } })
-  };
-});
-
-import handler from '../../api/bootstrap.js';
-
-function makeRes() {
-  return { statusCode: 200, body: null,
-    status(c) { this.statusCode = c; return this; },
-    json(b) { this.body = b; return this; } };
-}
-
-describe('POST /api/bootstrap', () => {
-  beforeEach(() => {
-    mockCreate.mockReset();
-    process.env.APP_PASSPHRASE = 'p';
-  });
-
-  it('returns 401 without auth', async () => {
-    const res = makeRes();
-    await handler({ method: 'POST', headers: {}, body: {} }, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 400 without parent_page_id', async () => {
-    const res = makeRes();
-    await handler({ method: 'POST', headers: { authorization: 'Bearer p' }, body: {} }, res);
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('creates DB with the timetable schema', async () => {
-    mockCreate.mockResolvedValue({ id: 'db-new-123' });
-    const res = makeRes();
-    await handler({
-      method: 'POST',
-      headers: { authorization: 'Bearer p' },
-      body: { parent_page_id: 'parent-xyz' }
-    }, res);
-    expect(res.statusCode).toBe(201);
-    expect(res.body.database_id).toBe('db-new-123');
-    const call = mockCreate.mock.calls[0][0];
-    expect(call.parent.page_id).toBe('parent-xyz');
-    expect(call.properties).toHaveProperty('Title');
-    expect(call.properties).toHaveProperty('Date');
-    expect(call.properties).toHaveProperty('Block');
-    expect(call.properties.Type.select.options.map(o => o.name).sort())
-      .toEqual(['boss', 'power_up', 'regular', 'yolo']);
-  });
-});
-```
-
-- [ ] **Step 2: Run, verify fail**
-
-Run: `npm test`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement `api/bootstrap.js`**
-
-```javascript
-import { checkAuth, unauthorized } from './_helpers/auth.js';
-import { getClient } from './_helpers/notion.js';
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
-  if (!checkAuth(req)) return unauthorized(res);
-  const parent = req.body?.parent_page_id;
-  if (!parent) return res.status(400).json({ error: 'parent_page_id required' });
-  try {
-    const db = await getClient().databases.create({
-      parent: { type: 'page_id', page_id: parent },
-      title: [{ type: 'text', text: { content: 'Timetable Tasks' } }],
-      properties: {
-        'Title':        { title: {} },
-        'Date':         { date: {} },
-        'Block':        { number: {} },
-        'Block Title':  { rich_text: {} },
-        'Type':         { select: { options: [
-          { name: 'power_up', color: 'blue' },
-          { name: 'yolo',     color: 'purple' },
-          { name: 'regular',  color: 'default' },
-          { name: 'boss',     color: 'orange' }
-        ] } },
-        'Description':  { rich_text: {} },
-        'Min Mins':     { number: {} },
-        'Order':        { number: {} },
-        'Done':         { checkbox: {} },
-        'Completed At': { date: {} },
-        'Energy':       { rich_text: {} }
-      }
-    });
-    res.status(201).json({ database_id: db.id });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `npm test`
-Expected: PASS.
-
-- [ ] **Step 5: Add bootstrap call to storage.js** — append:
-
-```javascript
-export async function bootstrapDatabase(parentPageId) {
-  return request('/api/bootstrap', { method: 'POST', body: JSON.stringify({ parent_page_id: parentPageId }) });
-}
-```
-
-- [ ] **Step 6: Implement `public/js/ui/settings.js`**
+- [ ] **Step 1: Implement `js/ui/settings.js`**
 
 ```javascript
 import { isSoundEnabled, setSoundEnabled } from './effects.js';
-import { clearStoredPassphrase } from './passphrase.js';
-import { bootstrapDatabase } from '../storage.js';
+import { exportAll, importAll, clearAll } from '../storage.js';
 
-export function buildSettingsDrawer({ onClose }) {
+export function buildSettingsDrawer({ onClose, onDataChanged }) {
   return (root) => {
     const h = document.createElement('h2');
     h.textContent = 'Settings';
     h.style.cssText = 'font-family:var(--font-display); margin:0 0 16px;';
     root.appendChild(h);
 
-    // Sound toggle
+    // Sound
     const soundRow = document.createElement('label');
     soundRow.style.cssText = 'display:flex; justify-content:space-between; padding:10px 0; align-items:center;';
-    soundRow.innerHTML = '<span>Sound effects</span>';
-    const soundInput = document.createElement('input');
-    soundInput.type = 'checkbox';
+    const soundLabel = document.createElement('span'); soundLabel.textContent = 'Sound effects';
+    const soundInput = document.createElement('input'); soundInput.type = 'checkbox';
     soundInput.checked = isSoundEnabled();
     soundInput.addEventListener('change', () => setSoundEnabled(soundInput.checked));
-    soundRow.appendChild(soundInput);
+    soundRow.append(soundLabel, soundInput);
     root.appendChild(soundRow);
 
-    // Passphrase reset
-    const passRow = document.createElement('div');
-    passRow.style.cssText = 'padding:10px 0; border-top:1px solid var(--surface-2);';
-    passRow.innerHTML = '<div style="margin-bottom:6px;">Forget stored passphrase</div>';
-    const passBtn = document.createElement('button');
-    passBtn.textContent = 'Sign out';
-    passBtn.style.cssText = 'padding:8px 16px; background:transparent; color:var(--red); border:1px solid var(--red); border-radius:6px;';
-    passBtn.addEventListener('click', () => {
-      clearStoredPassphrase();
-      location.reload();
+    // Export
+    const exportRow = document.createElement('div');
+    exportRow.style.cssText = 'padding:10px 0; border-top:1px solid var(--surface-2);';
+    exportRow.innerHTML = `<div style="margin-bottom:4px;">Backup data</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Download a JSON file of all your tasks. Do this weekly so you don't lose data if you clear your browser.</div>`;
+    const exportBtn = document.createElement('button');
+    exportBtn.textContent = 'Download backup';
+    exportBtn.style.cssText = 'padding:8px 16px; background:var(--accent); color:var(--bg); border:none; border-radius:6px;';
+    exportBtn.addEventListener('click', async () => {
+      const data = await exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `timetable-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
     });
-    passRow.appendChild(passBtn);
-    root.appendChild(passRow);
+    exportRow.appendChild(exportBtn);
+    root.appendChild(exportRow);
 
-    // Bootstrap DB
-    const bootstrapRow = document.createElement('div');
-    bootstrapRow.style.cssText = 'padding:10px 0; border-top:1px solid var(--surface-2);';
-    bootstrapRow.innerHTML = `
-      <div style="margin-bottom:6px;">Create Notion database</div>
-      <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">
-        Paste a Notion page ID (must be a page your integration has access to).
-        After creating, copy the returned database ID into your Vercel <code>NOTION_DATABASE_ID</code> env var.
-      </div>
-    `;
-    const pageInput = document.createElement('input');
-    pageInput.placeholder = 'Notion page ID';
-    pageInput.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface-2); color:var(--text); border-radius:6px; margin-bottom:6px;';
-    const bootBtn = document.createElement('button');
-    bootBtn.textContent = 'Create database';
-    bootBtn.style.cssText = 'padding:8px 16px; background:var(--accent); color:var(--bg); border:none; border-radius:6px;';
-    const result = document.createElement('div');
-    result.style.cssText = 'margin-top:6px; font-family:monospace; font-size:12px;';
-    bootBtn.addEventListener('click', async () => {
-      const id = pageInput.value.trim();
-      if (!id) return;
-      bootBtn.disabled = true;
+    // Import
+    const importRow = document.createElement('div');
+    importRow.style.cssText = 'padding:10px 0; border-top:1px solid var(--surface-2);';
+    importRow.innerHTML = `<div style="margin-bottom:4px;">Restore data</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Replaces all current data with a previously downloaded backup.</div>`;
+    const importInput = document.createElement('input');
+    importInput.type = 'file';
+    importInput.accept = 'application/json';
+    importInput.style.cssText = 'display:block; margin-bottom:6px;';
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files?.[0];
+      if (!file) return;
+      if (!confirm('Replace all current data with this backup? Current tasks will be lost.')) {
+        importInput.value = '';
+        return;
+      }
       try {
-        const r = await bootstrapDatabase(id);
-        result.textContent = `Created: ${r.database_id}`;
-        result.style.color = 'var(--green)';
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        await importAll(parsed);
+        onDataChanged?.();
+        onClose();
       } catch (e) {
-        result.textContent = `Error: ${e.message}`;
-        result.style.color = 'var(--red)';
-      } finally {
-        bootBtn.disabled = false;
+        alert('Import failed: ' + e.message);
       }
     });
-    bootstrapRow.append(pageInput, bootBtn, result);
-    root.appendChild(bootstrapRow);
+    importRow.appendChild(importInput);
+    root.appendChild(importRow);
 
+    // Clear all
+    const clearRow = document.createElement('div');
+    clearRow.style.cssText = 'padding:10px 0; border-top:1px solid var(--surface-2);';
+    clearRow.innerHTML = `<div style="margin-bottom:6px;">Danger zone</div>`;
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear all data';
+    clearBtn.style.cssText = 'padding:8px 16px; background:transparent; color:var(--red); border:1px solid var(--red); border-radius:6px;';
+    clearBtn.addEventListener('click', async () => {
+      if (!confirm('Permanently delete all timetable data? This cannot be undone.')) return;
+      await clearAll();
+      onDataChanged?.();
+      onClose();
+    });
+    clearRow.appendChild(clearBtn);
+    root.appendChild(clearRow);
+
+    // Close
     const close = document.createElement('button');
     close.textContent = 'Close';
     close.style.cssText = 'margin-top:14px; width:100%; padding:12px; background:transparent; color:var(--text); border:1px solid var(--surface-2); border-radius:8px;';
@@ -3118,27 +2087,41 @@ export function buildSettingsDrawer({ onClose }) {
 }
 ```
 
-- [ ] **Step 7: Wire up in `public/js/app.js`** — append:
+- [ ] **Step 2: Wire up in `js/app.js`** — append:
 
 ```javascript
 import { buildSettingsDrawer } from './ui/settings.js';
 
 document.getElementById('btn-settings').addEventListener('click', () => {
   const drawer = document.getElementById('drawer-settings');
-  openDrawer(drawer, buildSettingsDrawer({ onClose: () => closeDrawer(drawer) }));
+  openDrawer(drawer, buildSettingsDrawer({
+    onClose: () => closeDrawer(drawer),
+    onDataChanged: () => refresh()
+  }));
 });
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 3: Manual browser test**
+
+Run: `npm run dev`
+- Tap ⚙.
+- Toggle sound — verify a check-off no longer plays tones.
+- Click "Download backup" — verify a JSON file downloads with your current tasks.
+- Click "Clear all data" — confirm → state resets to empty.
+- Re-import the backup file — tasks return.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add api/bootstrap.js tests/api/bootstrap.test.js public/js/ui/settings.js public/js/storage.js public/js/app.js
-git commit -m "feat: settings drawer with sound toggle, sign-out, and DB bootstrap"
+git add js/ui/settings.js js/app.js
+git commit -m "feat(ui): settings drawer — sound, export, import, clear"
 ```
 
 ---
 
-### Task 25: README with setup instructions
+## Phase 9 — Polish & ship
+
+### Task 18: README
 
 **Files:**
 - Create: `README.md`
@@ -3148,161 +2131,127 @@ git commit -m "feat: settings drawer with sound toggle, sign-out, and DB bootstr
 ````markdown
 # Timetable
 
-ADHD-tuned gamified daily planner. Static site + Vercel serverless proxy backed by Notion.
-
-## Setup
-
-### 1. Create a Notion integration
-1. Go to https://www.notion.so/my-integrations and create a new internal integration.
-2. Copy the integration's secret token (starts with `secret_`).
-3. In Notion, create a page (e.g., "Timetable") and share it with the integration ("Add connections" menu).
-4. Copy the page ID from the URL (the 32-char hex string).
-
-### 2. Local development
-```bash
-cp .env.example .env.local
-# Fill in NOTION_TOKEN and APP_PASSPHRASE
-# Leave NOTION_DATABASE_ID empty for now — we'll create the DB next
-npm install
-npm run dev
-```
-Open http://localhost:3000 → enter passphrase → go to ⚙ Settings → paste page ID → "Create database". Copy the returned DB ID into `.env.local` as `NOTION_DATABASE_ID`, then restart `npm run dev`.
-
-### 3. Deploy to Vercel
-```bash
-vercel
-# When prompted, link to a project.
-# Add env vars in Vercel dashboard: NOTION_TOKEN, NOTION_DATABASE_ID, APP_PASSPHRASE
-vercel --prod
-```
+ADHD-tuned gamified daily planner. Pure static site, all data lives in your browser.
 
 ## Daily use
 
-- Open the site. The passphrase auto-fills from localStorage after first entry.
-- Today's plan renders. Tap a task to mark it done.
-- Tap "+ Plan tomorrow" to open the night-planning drawer.
-- Tap 📅 to see the history calendar and review past days.
-- Tap ⚙ to toggle sound, sign out, or re-bootstrap the database.
+1. Open the site.
+2. Today's plan renders. Tap a task to check it off — confetti, XP, sounds.
+3. Tap "+ Plan tomorrow" to fill in tomorrow's blocks. Today's structure is used as a template.
+4. Tap 📅 for the calendar / history view.
+5. Tap ⚙ for sound toggle and **backups** (recommended weekly).
 
-## Testing
+## Important: back up your data
+
+All data lives in your browser's localStorage. If you clear browser data, you lose everything. Solution:
+- Settings → "Download backup" once a week. Save the JSON file somewhere safe.
+- Settings → "Restore data" to import a backup file.
+
+## Run locally
 
 ```bash
-npm test          # run all tests once
-npm run test:watch # watch mode
+npm install
+npm run dev
+```
+
+Opens http://localhost:3000.
+
+## Tests
+
+```bash
+npm test
 ```
 
 ## Architecture
 
 See `docs/superpowers/specs/2026-05-24-timetable-design.md`.
+
+## Future: cloud sync
+
+The `storage.js` module is the only file that talks to data. To add cross-device sync later (Notion + Vercel proxy), rewrite that one file. Architecture preserves the swap path. See spec → "Migration path".
 ````
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs: README with setup and daily-use instructions"
+git commit -m "docs: README with daily use, backup, run, and architecture notes"
 ```
 
 ---
 
-## Phase 8 — Deployment & final pass
-
-### Task 26: Deploy to Vercel (manual, by user)
-
-**Files:** none
-
-- [ ] **Step 1: User runs `vercel` from the repo root**
-
-This is interactive. Follow prompts:
-- Set up and deploy → yes
-- Which scope → personal
-- Link to existing → no
-- Project name → `timetable`
-- Code directory → `.`
-
-- [ ] **Step 2: Add env vars in the Vercel dashboard**
-
-Vercel → Project → Settings → Environment Variables:
-- `NOTION_TOKEN` = `secret_...`
-- `NOTION_DATABASE_ID` = `...`
-- `APP_PASSPHRASE` = chosen passphrase
-
-- [ ] **Step 3: Promote to production**
-
-```bash
-vercel --prod
-```
-
-- [ ] **Step 4: Smoke-test the live URL**
-
-Open the deployed URL in a phone browser. Enter the passphrase. Verify:
-- Passphrase persists.
-- Today's tasks render.
-- Check-off works.
-- Night-planning drawer creates rows in Notion.
-
-- [ ] **Step 5: Push to GitHub**
-
-```bash
-gh repo create timetable --private --source . --remote origin --push
-```
-
----
-
-### Task 27: Final self-review pass
+### Task 19: Final verification pass
 
 - [ ] **Step 1: Run full test suite**
 
 Run: `npm test`
 Expected: all tests pass.
 
-- [ ] **Step 2: Verify all features in the deployed site**
+- [ ] **Step 2: Full feature smoke test in browser**
 
-Checklist:
-- [ ] Passphrase prompt appears on first load and persists.
-- [ ] Today view renders.
-- [ ] Task check-off shows confetti + XP popup + sound.
-- [ ] Boss check-off shows boss banner + bigger confetti.
-- [ ] Every 5th check-off shows a loot-drop toast.
-- [ ] Energy emoji picker on block header works and persists.
-- [ ] "+ Plan tomorrow" drawer opens, prefilled, saves.
-- [ ] 📅 history opens, shows calendar with correct colors.
-- [ ] Click a past day shows that day's tasks.
-- [ ] ⚙ settings: sound toggle works, sign-out clears passphrase.
-- [ ] Streak counter increments correctly.
-- [ ] Mobile responsive (single column, tappable targets).
+Run: `npm run dev`. Walk through:
+- [ ] Empty state shows on fresh load.
+- [ ] "+ Plan tomorrow" creates a plan dated tomorrow. (Verify via export → see the date in JSON.)
+- [ ] Manually create a plan for *today* by either: editing localStorage directly, or temporarily changing system date and using the plan drawer.
+- [ ] Open today: blocks render with correct types and Boss row in gold.
+- [ ] Tap each task type → check confetti + XP popup + sound.
+- [ ] Tap Boss → boss banner + bigger confetti + boss sound.
+- [ ] Every 5th check-off → loot drop toast appears.
+- [ ] Energy emojis: tap one → it stays selected; reload → still selected.
+- [ ] Top bar: level matches `floor(sqrt(lifetimeXP/50))`, streak shows expected value, XP bar fills.
+- [ ] 📅 history: today is outlined, past days colored by status, click → detail renders.
+- [ ] ⚙ settings: sound toggle, export, import, clear all — each verified.
+- [ ] Mobile responsive (resize browser to phone width) — single column, tappable.
 
-- [ ] **Step 3: Commit any final fixes**
+- [ ] **Step 3: Confirm with user before pushing to GitHub**
 
-If any of the checklist items fail, fix them and add a commit referencing the specific bug.
+Pause here. Ask user: "Ready to push to a new GitHub repo? Public or private? Repo name (default: `timetable`)?"
+
+- [ ] **Step 4: Push to GitHub**
+
+```bash
+# After user confirms — defaults below; substitute private/public + name as user chose
+gh repo create timetable --private --source . --remote origin --push
+```
+
+- [ ] **Step 5: Enable GitHub Pages**
+
+```bash
+gh repo edit Prajje/timetable --enable-issues=true
+gh api -X POST repos/Prajje/timetable/pages -f source[branch]=main -f source[path]=/ || true
+```
+Note: `gh api` for Pages may require additional setup; alternatively guide the user through GitHub UI: Settings → Pages → Source: main branch, root. After ~30 seconds the site is live at `https://prajje.github.io/timetable/`.
+
+- [ ] **Step 6: Verify live site**
+
+Open `https://prajje.github.io/timetable/` on phone and laptop. Verify it loads and works.
 
 ---
 
-## Self-review notes (from plan author)
+## Self-review notes
 
 **Spec coverage check:**
-- Tech stack (spec §"Tech stack") → Tasks 1–2.
-- Notion data model (spec §"Notion data model") → Tasks 9, 24 (bootstrap schema).
-- Single-page Today UI (spec §"UI structure") → Tasks 14, 17, 19, 20.
-- Plan-tomorrow drawer (spec §"Night-planning flow") → Tasks 21, 22.
-- History calendar (spec §"UI structure" — history view) → Task 23.
-- Game mechanics §3 (dopamine on check-off) → Task 18, used in Task 20.
-- Game mechanics §4 (XP, levels, streak with forgiveness) → Tasks 4, 5, 6, 17, 20.
-- Game mechanics §5 (night-fill template) → Task 22.
-- Game mechanics §6 (energy check) → Tasks 19, 20.
-- Proxy API (spec §"Proxy API") → Tasks 10, 11, 12, 13.
-- Error handling & offline (spec §"Error handling & offline") → Task 16 (queue), Task 20 (optimistic UI + toast).
-- Out-of-scope items (timer, focus mode, multi-user, push) → correctly omitted.
+- Tech stack (spec §"Tech stack") → Task 1.
+- localStorage data model (spec §"Data model") → Task 8.
+- Single-page Today UI (spec §"UI structure") → Tasks 9, 11, 12.
+- Plan-tomorrow drawer (spec §"Night-fill template") → Task 15.
+- History calendar (spec §"UI structure") → Task 16.
+- Dopamine on check-off (spec §"Dopamine on check-off") → Task 10, used in Task 14.
+- XP/Levels/Streak (spec §"Game mechanics") → Tasks 4, 5, 6, 11, 14.
+- Energy check (spec §"Energy check") → Tasks 12, 14.
+- Export/Import (spec §"Export / Import") → Tasks 8, 17.
+- Out-of-scope (Notion, Vercel, timers, focus mode, multi-user, auth) → correctly omitted.
 
 **Type consistency check:**
-- Task shape used identically across `rowToTask`, `taskToProperties`, `partialProperties`, frontend storage, and UI rendering: `{ id, title, date, block, blockTitle, type, description, minMins, order, done, completedAt, energy }`. Consistent.
-- `groupByBlock` returns `{ blockIndex, blockTitle, energy, tasks }` — consumed by `renderDay` and `renderBlock`. Consistent.
-- `computeStreak` returns `{ streak, restDayUsedThisWeek }` — only `streak` is consumed by topbar; `restDayUsedThisWeek` is reserved for future UI display. Acceptable.
+- Task shape unchanged across `storage.js`, `aggregate.js`, UI rendering: `{ id, title, date, block, blockTitle, type, description, minMins, order, done, completedAt, energy }`. Consistent.
+- `groupByBlock` returns `{ blockIndex, blockTitle, energy, tasks }` — consumed by `renderDay` and `buildHistoryDrawer`. Consistent.
+- `computeStreak` returns `{ streak, restDayUsedThisWeek }`. Consistent.
 
-**Placeholder scan:** No TBDs, no "TODO", no "handle errors appropriately" without code. All code blocks contain runnable code.
+**Placeholder scan:** No TBDs. All code blocks complete and runnable.
 
-**Decision pinned during planning:**
-- Auth: chose passphrase prompt (simpler than Vercel Password Protection because it integrates with the proxy directly).
-- DB bootstrap: app-driven via Settings drawer (Task 24), not manual schema copy-paste.
-- Sound: Web Audio API tones (no external sound files needed).
-- Confetti: lazy-loaded from skypack CDN (no bundler).
+**Decisions pinned in plan:**
+- localStorage as a single JSON blob (simpler than per-day keys).
+- All storage functions return Promises (interface compatible with future async backend).
+- IDs via `crypto.randomUUID()` with a non-crypto fallback.
+- Confetti lazy-loaded from skypack CDN (no bundler).
+- Sound via Web Audio API tones (no audio files).
