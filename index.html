@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Timetable</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23111'/%3E%3Ctext x='50' y='70' font-family='Georgia,serif' font-size='62' font-weight='900' text-anchor='middle' fill='%23f5b800'%3ET%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="level-badge" id="level-badge">Lv 0</span>
+      <span class="streak" id="streak">🔥 0</span>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="btn-history" aria-label="History">📅</button>
+      <button class="icon-btn" id="btn-settings" aria-label="Settings">⚙</button>
+    </div>
+  </header>
+  <div class="xp-bar"><div class="xp-fill" id="xp-fill"></div><span class="xp-text" id="xp-text">0 XP today</span></div>
+
+  <main id="day-view"></main>
+
+  <div class="fab-container">
+    <button class="fab" id="btn-plan-tomorrow">+ Plan tomorrow</button>
+  </div>
+
+  <div class="drawer" id="drawer-plan"     hidden></div>
+  <div class="drawer" id="drawer-history"  hidden></div>
+  <div class="drawer" id="drawer-settings" hidden></div>
+
+  <div id="effects-layer" aria-hidden="true"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
