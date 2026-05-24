@@ -2,15 +2,15 @@ import { todayISO, addDays } from './lib/dates.js';
 import { summarizeDay } from './lib/aggregate.js';
 import { computeStreak } from './lib/streak.js';
 import { XP_VALUES, xpForTask } from './lib/xp.js';
-import { loadDay, loadHistory, updateTask, createTasks } from './storage.js';
+import { loadDay, loadHistory, updateTask, createTasks, deleteTask } from './storage.js';
 import { renderTopbar } from './ui/topbar.js';
-import { renderDay, onTaskToggle, onEnergyPick } from './ui/day.js';
+import { renderDay, onTaskToggle, onEnergyPick, onBlockEdit } from './ui/day.js';
 import {
   confettiBurst, xpPopup, playTick, playBossKill, showBossBanner,
   showLootIfDue, toast, loadSoundPref
 } from './ui/effects.js';
 import { openDrawer, closeDrawer } from './ui/drawer.js';
-import { buildPlanDrawer, tasksToSkeleton } from './ui/plan-drawer.js';
+import { buildPlanDrawer, tasksToSkeleton, tasksToFreshSkeleton } from './ui/plan-drawer.js';
 import { buildHistoryDrawer, renderHistoryDetail } from './ui/history.js';
 import { buildSettingsDrawer } from './ui/settings.js';
 
@@ -93,13 +93,60 @@ onEnergyPick(async (group, emoji) => {
   }
 });
 
+// Editable fields the plan drawer controls. done/completedAt/energy are
+// preserved across edits so check-off state isn't lost when you tweak titles.
+const EDITABLE_FIELDS = ['title', 'blockTitle', 'block', 'type', 'description', 'minMins', 'order', 'time'];
+
+async function upsertPlan(targetDate, newTasks, originalTasks) {
+  const keptIds = new Set();
+  const creates = [];
+  const updates = [];
+  for (const t of newTasks) {
+    if (t.id) {
+      keptIds.add(t.id);
+      const patch = {};
+      for (const f of EDITABLE_FIELDS) patch[f] = t[f];
+      updates.push({ id: t.id, patch });
+    } else {
+      const { id, ...rest } = t;
+      creates.push(rest);
+    }
+  }
+  const deletes = originalTasks.filter(t => !keptIds.has(t.id));
+  await Promise.all(updates.map(u => updateTask(u.id, u.patch)));
+  if (creates.length) await createTasks(creates);
+  await Promise.all(deletes.map(d => deleteTask(d.id)));
+}
+
+onBlockEdit(() => {
+  // Edit today's plan (drawer covers the whole day, not just one block —
+  // the pencil per block is just an entry point)
+  const drawer = document.getElementById('drawer-plan');
+  const skeleton = tasksToSkeleton(state.tasks);
+  openDrawer(drawer, buildPlanDrawer({
+    skeleton,
+    targetDate: state.date,
+    onCancel: () => closeDrawer(drawer),
+    onSave: async (newTasks) => {
+      try {
+        await upsertPlan(state.date, newTasks, state.tasks);
+        closeDrawer(drawer);
+        toast('Plan updated.');
+        await refresh();
+      } catch (e) {
+        toast(`Save failed: ${e.message}`);
+      }
+    }
+  }));
+});
+
 document.getElementById('btn-plan-tomorrow').addEventListener('click', async () => {
   const planningToday = state.tasks.length === 0;
   const targetDate = planningToday ? state.date : addDays(state.date, 1);
   const skeletonSource = planningToday
     ? await loadDay(addDays(state.date, -1))
     : state.tasks;
-  const skeleton = tasksToSkeleton(skeletonSource);
+  const skeleton = tasksToFreshSkeleton(skeletonSource);
   const drawer = document.getElementById('drawer-plan');
   openDrawer(drawer, buildPlanDrawer({
     skeleton,
@@ -107,7 +154,9 @@ document.getElementById('btn-plan-tomorrow').addEventListener('click', async () 
     onCancel: () => closeDrawer(drawer),
     onSave: async (newTasks) => {
       try {
-        await createTasks(newTasks);
+        // Brand-new plan: all tasks lack IDs, so createTasks is enough
+        const fresh = newTasks.map(({ id, ...rest }) => rest);
+        await createTasks(fresh);
         closeDrawer(drawer);
         toast(`Plan saved for ${targetDate}.`);
         if (planningToday) await refresh();

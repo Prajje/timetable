@@ -47,10 +47,10 @@ function defaultBlock(idx) {
   return {
     blockIndex: idx,
     blockTitle: titles[idx - 1] ?? `Block ${idx}`,
-    powerUp:  { title: 'Power Up', description: '1. Eat\n2. Call\n3. Text' },
-    yolo:     { title: 'Yolo task', minMins: 30 },
+    powerUp:  { id: null, title: 'Power Up', description: '1. Eat\n2. Call\n3. Text', time: '' },
+    yolo:     { id: null, title: 'Yolo task', minMins: 30, time: '' },
     regulars: [],
-    boss:     { title: '', minMins: 45 }
+    boss:     { id: null, title: '', minMins: 45, time: '' }
   };
 }
 
@@ -74,40 +74,78 @@ function renderBlock(b, idx, state, rerender) {
   }
   card.appendChild(titleRow);
 
-  card.appendChild(makeField('Power Up title', b.powerUp.title, v => b.powerUp.title = v));
+  card.appendChild(makeRow([
+    ['Power Up title', b.powerUp.title, v => b.powerUp.title = v, 3, 'text'],
+    ['Time', b.powerUp.time, v => b.powerUp.time = v, 1, 'time']
+  ]));
   card.appendChild(makeTextarea('Power Up sub-items', b.powerUp.description, v => b.powerUp.description = v));
-  card.appendChild(makeFieldPair('Yolo title', b.yolo.title, v => b.yolo.title = v, 'Min', b.yolo.minMins, v => b.yolo.minMins = Number(v) || null));
+
+  card.appendChild(makeRow([
+    ['Yolo title', b.yolo.title, v => b.yolo.title = v, 3, 'text'],
+    ['Time', b.yolo.time, v => b.yolo.time = v, 1, 'time'],
+    ['Min', b.yolo.minMins ?? '', v => b.yolo.minMins = Number(v) || null, 1, 'number']
+  ]));
 
   const regHeader = document.createElement('div');
   regHeader.textContent = 'Other tasks';
   regHeader.style.cssText = 'font-size:13px; color:var(--text-dim); margin:10px 0 4px;';
   card.appendChild(regHeader);
   b.regulars.forEach((r, ri) => {
-    card.appendChild(makeFieldPairWithRemove(
-      'Title', r.title, v => r.title = v,
-      'Min', r.minMins ?? 0, v => r.minMins = Number(v) || null,
-      () => { b.regulars.splice(ri, 1); rerender(); }
-    ));
+    card.appendChild(makeRowWithRemove([
+      ['Title', r.title, v => r.title = v, 3, 'text'],
+      ['Time', r.time ?? '', v => r.time = v, 1, 'time'],
+      ['Min', r.minMins ?? '', v => r.minMins = Number(v) || null, 1, 'number']
+    ], () => { b.regulars.splice(ri, 1); rerender(); }));
   });
   const addReg = document.createElement('button');
   addReg.textContent = '+ Add task';
   addReg.style.cssText = 'background:transparent; color:var(--text-dim); border:1px dashed var(--surface); padding:6px; border-radius:6px; width:100%; font-size:13px; margin-top:4px;';
-  addReg.addEventListener('click', () => { b.regulars.push({ title: '', minMins: 45 }); rerender(); });
+  addReg.addEventListener('click', () => { b.regulars.push({ id: null, title: '', minMins: 45, time: '' }); rerender(); });
   card.appendChild(addReg);
 
-  card.appendChild(makeFieldPair('⚔ Boss title', b.boss.title, v => b.boss.title = v, 'Min', b.boss.minMins, v => b.boss.minMins = Number(v) || null));
+  card.appendChild(makeRow([
+    ['⚔ Boss title', b.boss.title, v => b.boss.title = v, 3, 'text'],
+    ['Time', b.boss.time, v => b.boss.time = v, 1, 'time'],
+    ['Min', b.boss.minMins ?? '', v => b.boss.minMins = Number(v) || null, 1, 'number']
+  ]));
 
   return card;
 }
 
-function makeField(label, value, onChange) {
-  const wrap = document.createElement('div'); wrap.style.cssText = 'margin: 6px 0;';
-  const l = document.createElement('div'); l.textContent = label;
+function makeRow(fields) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; gap:8px; margin:6px 0; align-items:flex-end;';
+  for (const [label, value, onChange, flex, type] of fields) {
+    const w = makeFieldOfType(label, value, onChange, type);
+    w.style.flex = String(flex);
+    wrap.appendChild(w);
+  }
+  return wrap;
+}
+
+function makeRowWithRemove(fields, onRemove) {
+  const wrap = makeRow(fields);
+  const rm = document.createElement('button');
+  rm.textContent = '×';
+  rm.style.cssText = 'background:transparent; color:var(--text-dim); border:none; font-size:20px; padding:0 6px;';
+  rm.addEventListener('click', onRemove);
+  wrap.appendChild(rm);
+  return wrap;
+}
+
+function makeFieldOfType(label, value, onChange, type = 'text') {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'min-width:0;';
+  const l = document.createElement('div');
+  l.textContent = label;
   l.style.cssText = 'font-size:11px; color:var(--text-dim); margin-bottom:2px;';
-  const i = document.createElement('input'); i.value = value ?? '';
-  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px;';
+  const i = document.createElement('input');
+  i.type = type;
+  i.value = value ?? '';
+  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px; font-family:inherit;';
   i.addEventListener('input', () => onChange(i.value));
-  wrap.append(l, i); return wrap;
+  wrap.append(l, i);
+  return wrap;
 }
 
 function makeTextarea(label, value, onChange) {
@@ -115,26 +153,9 @@ function makeTextarea(label, value, onChange) {
   const l = document.createElement('div'); l.textContent = label;
   l.style.cssText = 'font-size:11px; color:var(--text-dim); margin-bottom:2px;';
   const i = document.createElement('textarea'); i.value = value ?? ''; i.rows = 3;
-  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px; resize:vertical;';
+  i.style.cssText = 'width:100%; padding:8px; background:var(--bg); border:1px solid var(--surface); color:var(--text); border-radius:6px; resize:vertical; font-family:inherit;';
   i.addEventListener('input', () => onChange(i.value));
   wrap.append(l, i); return wrap;
-}
-
-function makeFieldPair(l1, v1, on1, l2, v2, on2) {
-  const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex; gap:8px; margin:6px 0;';
-  const m = makeField(l1, v1, on1); m.style.flex = '3';
-  const n = makeField(l2, v2, on2); n.style.flex = '1';
-  wrap.append(m, n); return wrap;
-}
-
-function makeFieldPairWithRemove(l1, v1, on1, l2, v2, on2, onRemove) {
-  const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex; gap:6px; align-items:flex-end; margin:4px 0;';
-  const m = makeField(l1, v1, on1); m.style.flex = '3';
-  const n = makeField(l2, v2, on2); n.style.flex = '1';
-  const rm = document.createElement('button'); rm.textContent = '×';
-  rm.style.cssText = 'background:transparent; color:var(--text-dim); border:none; font-size:20px; padding:0 6px;';
-  rm.addEventListener('click', onRemove);
-  wrap.append(m, n, rm); return wrap;
 }
 
 function blocksToTasks(blocks, date) {
@@ -142,28 +163,33 @@ function blocksToTasks(blocks, date) {
   for (const b of blocks) {
     let order = 0;
     if (b.powerUp.title) {
-      out.push({ title: b.powerUp.title, date, block: b.blockIndex, blockTitle: b.blockTitle,
-                 type: 'power_up', description: b.powerUp.description ?? '', minMins: null,
-                 order: order++, done: false, completedAt: null, energy: '' });
+      out.push(makeTask(b.powerUp.id, b.powerUp.title, date, b.blockIndex, b.blockTitle,
+                       'power_up', b.powerUp.description ?? '', null, b.powerUp.time, order++));
     }
     if (b.yolo.title) {
-      out.push({ title: b.yolo.title, date, block: b.blockIndex, blockTitle: b.blockTitle,
-                 type: 'yolo', description: '', minMins: b.yolo.minMins || null,
-                 order: order++, done: false, completedAt: null, energy: '' });
+      out.push(makeTask(b.yolo.id, b.yolo.title, date, b.blockIndex, b.blockTitle,
+                       'yolo', '', b.yolo.minMins || null, b.yolo.time, order++));
     }
     for (const r of b.regulars) {
       if (!r.title) continue;
-      out.push({ title: r.title, date, block: b.blockIndex, blockTitle: b.blockTitle,
-                 type: 'regular', description: '', minMins: r.minMins || null,
-                 order: order++, done: false, completedAt: null, energy: '' });
+      out.push(makeTask(r.id, r.title, date, b.blockIndex, b.blockTitle,
+                       'regular', '', r.minMins || null, r.time, order++));
     }
     if (b.boss.title) {
-      out.push({ title: b.boss.title, date, block: b.blockIndex, blockTitle: b.blockTitle,
-                 type: 'boss', description: '', minMins: b.boss.minMins || null,
-                 order: order++, done: false, completedAt: null, energy: '' });
+      out.push(makeTask(b.boss.id, b.boss.title, date, b.blockIndex, b.blockTitle,
+                       'boss', '', b.boss.minMins || null, b.boss.time, order++));
     }
   }
   return out;
+}
+
+function makeTask(id, title, date, block, blockTitle, type, description, minMins, time, order) {
+  return {
+    id: id ?? null,
+    title, date, block, blockTitle, type, description,
+    minMins, time: time || '', order,
+    done: false, completedAt: null, energy: ''
+  };
 }
 
 export function tasksToSkeleton(tasks) {
@@ -171,15 +197,41 @@ export function tasksToSkeleton(tasks) {
   for (const t of tasks) {
     if (!byBlock.has(t.block)) byBlock.set(t.block, {
       blockIndex: t.block, blockTitle: t.blockTitle || `Block ${t.block}`,
-      powerUp: { title: '', description: '' },
-      yolo: { title: '', minMins: 30 },
+      powerUp: { id: null, title: '', description: '', time: '' },
+      yolo: { id: null, title: '', minMins: 30, time: '' },
       regulars: [],
-      boss: { title: '', minMins: 45 }
+      boss: { id: null, title: '', minMins: 45, time: '' }
     });
     const b = byBlock.get(t.block);
-    if (t.type === 'power_up') { b.powerUp.title = t.title; b.powerUp.description = t.description; }
-    else if (t.type === 'yolo') { b.yolo.title = t.title; b.yolo.minMins = t.minMins ?? 30; }
-    else if (t.type === 'boss') { b.boss.minMins = t.minMins ?? 45; }
+    if (t.type === 'power_up') {
+      b.powerUp.id = t.id; b.powerUp.title = t.title; b.powerUp.description = t.description;
+      b.powerUp.time = t.time || '';
+    } else if (t.type === 'yolo') {
+      b.yolo.id = t.id; b.yolo.title = t.title; b.yolo.minMins = t.minMins ?? 30;
+      b.yolo.time = t.time || '';
+    } else if (t.type === 'boss') {
+      b.boss.id = t.id; b.boss.title = t.title; b.boss.minMins = t.minMins ?? 45;
+      b.boss.time = t.time || '';
+    } else if (t.type === 'regular') {
+      b.regulars.push({ id: t.id, title: t.title, minMins: t.minMins ?? 45, time: t.time || '' });
+    }
   }
   return [...byBlock.values()].sort((a, b) => a.blockIndex - b.blockIndex);
+}
+
+// Same as tasksToSkeleton but clears titles for boss/regulars — used for the
+// "carry forward yesterday into tomorrow" path where you don't want to reuse
+// the bosses but DO want to reuse the Power Up + Yolo skeleton.
+export function tasksToFreshSkeleton(tasks) {
+  const sk = tasksToSkeleton(tasks);
+  for (const b of sk) {
+    b.boss.id = null;
+    b.boss.title = '';
+    b.boss.time = '';
+    b.regulars = [];
+    // Power Up & Yolo skeleton kept but IDs cleared (new tasks for tomorrow)
+    b.powerUp.id = null;
+    b.yolo.id = null;
+  }
+  return sk;
 }

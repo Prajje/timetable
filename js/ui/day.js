@@ -2,10 +2,26 @@ import { groupByBlock } from '../lib/aggregate.js';
 
 let onTaskToggleHandler = null;
 let onEnergyPickHandler = null;
+let onBlockEditHandler = null;
 export function onTaskToggle(fn) { onTaskToggleHandler = fn; }
 export function onEnergyPick(fn) { onEnergyPickHandler = fn; }
+export function onBlockEdit(fn) { onBlockEditHandler = fn; }
 
 const ENERGY_EMOJIS = ['😩', '😐', '🙂', '⚡'];
+
+function timeKey(t) {
+  if (!t.time) return Number.POSITIVE_INFINITY;
+  const [h, m] = t.time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function formatTime12(time) {
+  if (!time) return '';
+  const [h, m] = time.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
 
 export function renderDay(tasks) {
   const root = document.getElementById('day-view');
@@ -18,6 +34,12 @@ export function renderDay(tasks) {
     return;
   }
   for (const group of groupByBlock(tasks)) {
+    // Sort within block: time-tagged first (asc), then time-less by order
+    group.tasks.sort((a, b) => {
+      const ta = timeKey(a), tb = timeKey(b);
+      if (ta !== tb) return ta - tb;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
     root.appendChild(renderBlock(group));
   }
 }
@@ -34,6 +56,9 @@ function renderBlock(group) {
   title.textContent = group.blockTitle || `Block ${group.blockIndex}`;
   header.appendChild(title);
 
+  const headerRight = document.createElement('div');
+  headerRight.style.cssText = 'display:flex; gap:8px; align-items:center;';
+
   const energy = document.createElement('div');
   energy.className = 'energy-picker';
   for (const emoji of ENERGY_EMOJIS) {
@@ -43,7 +68,16 @@ function renderBlock(group) {
     b.addEventListener('click', (e) => { e.stopPropagation(); onEnergyPickHandler?.(group, emoji); });
     energy.appendChild(b);
   }
-  header.appendChild(energy);
+  headerRight.appendChild(energy);
+
+  const editBtn = document.createElement('button');
+  editBtn.textContent = '✏';
+  editBtn.title = 'Edit plan';
+  editBtn.style.cssText = 'background:transparent; border:none; color:var(--text-dim); font-size:16px; padding:4px 6px; border-radius:6px; cursor:pointer;';
+  editBtn.addEventListener('click', (e) => { e.stopPropagation(); onBlockEditHandler?.(); });
+  headerRight.appendChild(editBtn);
+
+  header.appendChild(headerRight);
   card.appendChild(header);
 
   for (const t of group.tasks) card.appendChild(renderTask(t));
@@ -67,7 +101,16 @@ function renderTask(t) {
 
   const titleEl = document.createElement('div');
   titleEl.className = 'task-title';
-  titleEl.textContent = t.type === 'boss' ? `⚔ ${t.title}` : t.title;
+  const prefix = t.type === 'boss' ? '⚔ ' : '';
+  if (t.time) {
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = formatTime12(t.time) + ' · ';
+    timeSpan.style.cssText = 'color:var(--text-dim); font-weight:500; margin-right:2px;';
+    titleEl.appendChild(timeSpan);
+    titleEl.appendChild(document.createTextNode(prefix + t.title));
+  } else {
+    titleEl.textContent = prefix + t.title;
+  }
   content.appendChild(titleEl);
 
   if (t.description) {
