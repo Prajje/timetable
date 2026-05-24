@@ -33,6 +33,8 @@ function renderAll() {
   const { streak } = computeStreak(dayBuckets, state.date);
   renderTopbar({ totalLifetimeXp: lifetimeXp, todayXp: totalXp, streak });
   renderDay(state.tasks);
+  document.getElementById('btn-plan-tomorrow').textContent =
+    state.tasks.length === 0 ? '+ Plan today' : '+ Plan tomorrow';
 }
 
 function bucketHistoryByDate(allTasks) {
@@ -92,19 +94,23 @@ onEnergyPick(async (group, emoji) => {
 });
 
 document.getElementById('btn-plan-tomorrow').addEventListener('click', async () => {
-  const tomorrow = addDays(state.date, 1);
-  const todayTasks = await loadDay(state.date);
-  const skeleton = tasksToSkeleton(todayTasks);
+  const planningToday = state.tasks.length === 0;
+  const targetDate = planningToday ? state.date : addDays(state.date, 1);
+  const skeletonSource = planningToday
+    ? await loadDay(addDays(state.date, -1))
+    : state.tasks;
+  const skeleton = tasksToSkeleton(skeletonSource);
   const drawer = document.getElementById('drawer-plan');
   openDrawer(drawer, buildPlanDrawer({
     skeleton,
-    targetDate: tomorrow,
+    targetDate,
     onCancel: () => closeDrawer(drawer),
     onSave: async (newTasks) => {
       try {
         await createTasks(newTasks);
         closeDrawer(drawer);
-        toast(`Plan saved for ${tomorrow}.`);
+        toast(`Plan saved for ${targetDate}.`);
+        if (planningToday) await refresh();
       } catch (e) {
         toast(`Save failed: ${e.message}`);
       }

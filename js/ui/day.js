@@ -13,7 +13,7 @@ export function renderDay(tasks) {
   if (tasks.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'No plan for today. Tap "+ Plan tomorrow" to start.';
+    empty.textContent = 'No plan for today. Tap "+ Plan today" to start.';
     root.appendChild(empty);
     return;
   }
