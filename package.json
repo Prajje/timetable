@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "npx http-server -p 3000 -c-1 -o",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bump": "node scripts/cache-bust.mjs"
   },
   "devDependencies": {
     "vitest": "^2.1.0",
