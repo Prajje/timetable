@@ -43,10 +43,26 @@ input, textarea { font-family: inherit; }
   position: absolute; right: 0; top: 12px; font-size: 11px; color: var(--text-dim);
 }
 
+.past-day-banner {
+  max-width: 720px; margin: 18px auto 0; padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--surface); border: 1px solid var(--surface-2);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  font-size: 13px; color: var(--text);
+}
+.past-day-banner[hidden] { display: none; }
+.past-day-back {
+  background: transparent; border: none; color: var(--accent);
+  font-size: 13px; font-weight: 600; padding: 4px 8px; border-radius: 6px;
+}
+.past-day-back:hover { background: var(--surface-2); }
+
 main {
   max-width: 720px; margin: 32px auto 100px; padding: 0 18px;
   display: flex; flex-direction: column; gap: 18px;
 }
+
+main.with-banner { margin-top: 16px; }
 
 .empty-state {
   text-align: center; color: var(--text-dim); padding: 40px 20px;

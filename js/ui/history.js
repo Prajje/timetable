@@ -39,10 +39,14 @@ export function buildHistoryDrawer({ history, onClose, onPickDate }) {
         else if (sum.completionStatus === 'missed') { bg = 'var(--red)'; color = '#fff'; }
       }
       if (date === today) cell.style.outline = '2px solid var(--text)';
-      if (date > today) cell.style.opacity = '0.4';
+      if (date > today) {
+        cell.style.opacity = '0.4';
+        cell.style.cursor = 'default';
+      } else {
+        cell.addEventListener('click', () => onPickDate(date));
+      }
       cell.style.background = bg;
       cell.style.color = color;
-      cell.addEventListener('click', () => onPickDate(date, tasks));
       grid.appendChild(cell);
     }
     root.appendChild(grid);
@@ -56,10 +60,10 @@ export function buildHistoryDrawer({ history, onClose, onPickDate }) {
     `;
     root.appendChild(legend);
 
-    const detail = document.createElement('div');
-    detail.id = 'history-detail';
-    detail.style.cssText = 'margin-top:14px; padding-top:14px; border-top:1px solid var(--surface-2);';
-    root.appendChild(detail);
+    const hint = document.createElement('div');
+    hint.textContent = 'Tap any day to open it.';
+    hint.style.cssText = 'margin-top:12px; font-size:12px; color:var(--text-dim); text-align:center;';
+    root.appendChild(hint);
 
     const close = document.createElement('button');
     close.textContent = 'Close';
@@ -67,27 +71,4 @@ export function buildHistoryDrawer({ history, onClose, onPickDate }) {
     close.addEventListener('click', onClose);
     root.appendChild(close);
   };
-}
-
-export function renderHistoryDetail(date, tasks) {
-  const root = document.getElementById('history-detail');
-  if (!root) return;
-  root.innerHTML = '';
-  const h = document.createElement('div');
-  h.textContent = date;
-  h.style.cssText = 'font-family:var(--font-display); font-weight:700; margin-bottom:8px;';
-  root.appendChild(h);
-  if (tasks.length === 0) {
-    const empty = document.createElement('div');
-    empty.textContent = 'No plan for this day.';
-    empty.style.cssText = 'color:var(--text-dim); font-size:13px;';
-    root.appendChild(empty);
-    return;
-  }
-  for (const t of [...tasks].sort((a, b) => (a.block - b.block) || (a.order - b.order))) {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; gap:8px; font-size:13px; padding:4px 0; color:' + (t.done ? 'var(--text-dim)' : 'var(--text)');
-    row.innerHTML = `<span>${t.done ? '✓' : '○'}</span><span>${t.blockTitle}</span><span>${t.type === 'boss' ? '⚔ ' : ''}${t.title}</span>`;
-    root.appendChild(row);
-  }
 }

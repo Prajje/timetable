@@ -4,14 +4,14 @@ import { computeStreak } from './lib/streak.js';
 import { XP_VALUES, xpForTask } from './lib/xp.js';
 import { loadDay, loadHistory, updateTask, createTasks, deleteTask } from './storage.js';
 import { renderTopbar } from './ui/topbar.js';
-import { renderDay, onTaskToggle, onEnergyPick, onBlockEdit } from './ui/day.js';
+import { renderDay, onTaskToggle, onEnergyPick, onBlockEdit, setEmptyStateMode } from './ui/day.js';
 import {
   confettiBurst, xpPopup, playTick, playBossKill, showBossBanner,
   showLootIfDue, toast, loadSoundPref
 } from './ui/effects.js';
 import { openDrawer, closeDrawer } from './ui/drawer.js';
 import { buildPlanDrawer, tasksToSkeleton, tasksToFreshSkeleton } from './ui/plan-drawer.js';
-import { buildHistoryDrawer, renderHistoryDetail } from './ui/history.js';
+import { buildHistoryDrawer } from './ui/history.js';
 import { buildSettingsDrawer } from './ui/settings.js';
 
 const state = {
@@ -26,15 +26,53 @@ async function refresh() {
   renderAll();
 }
 
+function formatDayLabel(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const weekday = date.toLocaleDateString(undefined, { weekday: 'short' });
+  const month = date.toLocaleDateString(undefined, { month: 'short' });
+  return `${weekday} ${month} ${d}`;
+}
+
 function renderAll() {
+  const today = todayISO();
+  const isToday = state.date === today;
   const { totalXp } = summarizeDay(state.tasks);
   const lifetimeXp = state.history.reduce((s, t) => s + xpForTask(t), 0);
   const dayBuckets = bucketHistoryByDate(state.history);
-  const { streak } = computeStreak(dayBuckets, state.date);
-  renderTopbar({ totalLifetimeXp: lifetimeXp, todayXp: totalXp, streak });
+  const { streak } = computeStreak(dayBuckets, today);
+  renderTopbar({ totalLifetimeXp: lifetimeXp, todayXp: totalXp, streak, isToday });
+  setEmptyStateMode(isToday ? 'today' : 'past');
   renderDay(state.tasks);
-  document.getElementById('btn-plan-tomorrow').textContent =
-    state.tasks.length === 0 ? '+ Plan today' : '+ Plan tomorrow';
+  renderPastDayBanner(isToday);
+  renderFab(isToday);
+}
+
+function renderPastDayBanner(isToday) {
+  const banner = document.getElementById('past-day-banner');
+  const main = document.getElementById('day-view');
+  if (isToday) {
+    banner.hidden = true;
+    main.classList.remove('with-banner');
+  } else {
+    document.getElementById('past-day-label').textContent = `Viewing ${formatDayLabel(state.date)}`;
+    banner.hidden = false;
+    main.classList.add('with-banner');
+  }
+}
+
+function renderFab(isToday) {
+  const fab = document.getElementById('btn-plan-tomorrow');
+  if (!isToday && state.tasks.length > 0) {
+    fab.hidden = true;
+    return;
+  }
+  fab.hidden = false;
+  if (!isToday) {
+    fab.textContent = '+ Plan this day';
+  } else {
+    fab.textContent = state.tasks.length === 0 ? '+ Plan today' : '+ Plan tomorrow';
+  }
 }
 
 function bucketHistoryByDate(allTasks) {
@@ -172,8 +210,17 @@ document.getElementById('btn-history').addEventListener('click', () => {
   openDrawer(drawer, buildHistoryDrawer({
     history: state.history,
     onClose: () => closeDrawer(drawer),
-    onPickDate: (date, tasks) => renderHistoryDetail(date, tasks)
+    onPickDate: async (date) => {
+      closeDrawer(drawer);
+      state.date = date;
+      await refresh();
+    }
   }));
+});
+
+document.getElementById('btn-back-to-today').addEventListener('click', async () => {
+  state.date = todayISO();
+  await refresh();
 });
 
 document.getElementById('btn-settings').addEventListener('click', () => {

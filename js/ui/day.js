@@ -7,6 +7,9 @@ export function onTaskToggle(fn) { onTaskToggleHandler = fn; }
 export function onEnergyPick(fn) { onEnergyPickHandler = fn; }
 export function onBlockEdit(fn) { onBlockEditHandler = fn; }
 
+let emptyStateMode = 'today';
+export function setEmptyStateMode(mode) { emptyStateMode = mode; }
+
 const ENERGY_EMOJIS = ['😩', '😐', '🙂', '⚡'];
 
 function timeKey(t) {
@@ -29,7 +32,9 @@ export function renderDay(tasks) {
   if (tasks.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'No plan for today. Tap "+ Plan today" to start.';
+    empty.textContent = emptyStateMode === 'past'
+      ? 'No plan for this day. Tap "+ Plan this day" to backfill.'
+      : 'No plan for today. Tap "+ Plan today" to start.';
     root.appendChild(empty);
     return;
   }
